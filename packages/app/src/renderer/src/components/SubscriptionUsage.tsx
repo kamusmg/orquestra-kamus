@@ -4,10 +4,11 @@ import type { CommandApi } from '../api';
 
 type Provider = 'codex' | 'claude' | 'agy';
 type Usage = HostResult<'usage.codex'>;
+// O Antigravity só é consultado sob pedido: cada consulta abre um agy, e o atualizador dele pisca uma janela de console.
 const providers = [
-  { id: 'codex', title: 'Codex · ChatGPT' },
-  { id: 'claude', title: 'Claude' },
-  { id: 'agy', title: 'Antigravity' },
+  { id: 'codex', title: 'Codex · ChatGPT', automatic: true },
+  { id: 'claude', title: 'Claude', automatic: true },
+  { id: 'agy', title: 'Antigravity', automatic: false },
 ] as const;
 
 function windowSummary(usage: Usage | undefined, period: '5h' | '7d'): string {
@@ -17,7 +18,7 @@ function windowSummary(usage: Usage | undefined, period: '5h' | '7d'): string {
   return windows.map((window) => `${window.label.startsWith('Gemini') ? 'G ' : window.label.startsWith('Claude / GPT') ? 'C/G ' : ''}${window.usedPercent}%`).join(' · ');
 }
 
-function ProviderUsage({ id, title, api, onUsage }: { id: Provider; title: string; api: CommandApi; onUsage(id: Provider, usage: Usage): void }) {
+function ProviderUsage({ id, title, automatic, api, onUsage }: { id: Provider; title: string; automatic: boolean; api: CommandApi; onUsage(id: Provider, usage: Usage): void }) {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,12 +41,14 @@ function ProviderUsage({ id, title, api, onUsage }: { id: Provider; title: strin
   };
   useEffect(() => {
     mounted.current = true;
+    if (!automatic) return () => { mounted.current = false; };
     void refresh();
     const timer = setInterval(() => void refresh(), id === 'claude' ? 300000 : 60000);
     return () => { mounted.current = false; clearInterval(timer); };
-  }, [api, id]);
+  }, [api, id, automatic]);
   return <section className="usage-provider-section" aria-label={`Assinatura ${title}`}>
     <div className="usage-heading"><strong>{title}</strong><button onClick={() => void refresh()} disabled={loading}>{loading ? 'Consultando…' : 'Atualizar'}</button></div>
+    {!automatic && !usage && !loading && !error ? <p className="muted">Clique em Atualizar para consultar.</p> : null}
     {error ? <p role="status" className="usage-error">{error}{usage ? ' Os dados abaixo são da última consulta.' : ''}</p> : null}
     {usage?.windows.map((window, index) => <div className="usage-window" key={index}>
       <div className="usage-heading"><span>{window.label}</span><span>{window.usedPercent}% usado</span></div>
