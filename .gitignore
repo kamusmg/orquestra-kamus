@@ -16,4 +16,5 @@ release/
 coverage/
 .DS_Store
 Thumbs.db
+.orquestra/
 graphify-out/

@@ -66,9 +66,97 @@ export const methodSchemas = {
       persona: z.string().min(1).optional(),
       args: z.array(z.string()).optional(),
       cwd: z.string().min(1).optional(),
+      floor: z.string().min(1).optional(),
       resume: z.boolean().optional(),
     }),
     result: z.object({ name: z.string() }),
+  },
+  'floor.list': {
+    params: empty,
+    result: z.object({
+      floors: z.array(z.object({ name: z.string(), path: z.string(), branch: z.string(), isMain: z.boolean() })),
+    }),
+  },
+  'floor.create': {
+    params: z.object({ name: z.string().min(1), branch: z.string().optional() }),
+    result: z.object({ name: z.string(), path: z.string(), branch: z.string() }),
+  },
+  'floor.remove': {
+    params: z.object({ name: z.string().min(1), force: z.boolean().optional(), keepBranch: z.boolean().optional() }),
+    result: empty,
+  },
+  'android.devices': {
+    params: empty,
+    result: z.object({
+      devices: z.array(z.object({ serial: z.string(), state: z.string(), model: z.string().optional() })),
+    }),
+  },
+  'android.snapshot': {
+    params: z.object({ serial: z.string().optional() }),
+    result: z.object({
+      serial: z.string(),
+      elements: z.array(
+        z.object({
+          ref: z.string(),
+          text: z.string(),
+          contentDesc: z.string(),
+          className: z.string(),
+          resourceId: z.string(),
+          bounds: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+          center: z.tuple([z.number(), z.number()]),
+        }),
+      ),
+    }),
+  },
+  'android.tap': {
+    params: z.object({ x: z.number(), y: z.number(), serial: z.string().optional() }),
+    result: empty,
+  },
+  'android.type': {
+    params: z.object({ text: z.string(), serial: z.string().optional() }),
+    result: empty,
+  },
+  'android.key': {
+    params: z.object({ key: z.string(), serial: z.string().optional() }),
+    result: empty,
+  },
+  'android.screenshot': {
+    params: z.object({ serial: z.string().optional() }),
+    result: z.object({ path: z.string() }),
+  },
+  'routine.list': {
+    params: empty,
+    result: z.object({
+      routines: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          command: z.string(),
+          schedule: z.string(),
+          target: z.string().optional(),
+          preRun: z.string().optional(),
+          enabled: z.boolean(),
+        }),
+      ),
+    }),
+  },
+  'routine.create': {
+    params: z.object({
+      name: z.string().min(1),
+      command: z.string().min(1),
+      schedule: z.string().min(1),
+      target: z.string().optional(),
+      preRun: z.string().optional(),
+    }),
+    result: z.object({ id: z.string(), name: z.string() }),
+  },
+  'routine.remove': {
+    params: z.object({ name: z.string().min(1) }),
+    result: empty,
+  },
+  'routine.run': {
+    params: z.object({ name: z.string().min(1) }),
+    result: z.object({ payload: z.string() }),
   },
   'regent.remove': {
     params: z.object({ name: z.string().min(1) }),

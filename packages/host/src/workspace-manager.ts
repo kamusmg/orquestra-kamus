@@ -6,13 +6,14 @@ import { OrqError, parseHostParams, type HostToMain, type MainToHost, type Works
 import { startHostBridge, type HostBridge, type HostBridgeOptions, type UsageState } from './bridge.js';
 import { FlowWorkerPool } from './flow-workers.js';
 
-const MAX_WORKSPACES = 3;
-const registrySchema = z.object({ version: z.literal(1), selectedId: z.string().nullable(), workspaces: z.array(z.object({ id: z.string(), dir: z.string(), name: z.string() })).max(MAX_WORKSPACES) });
+export const DEFAULT_MAX_WORKSPACES = 10;
 type Entry = { info: WorkspaceInfo; bridge?: HostBridge; tail: Promise<unknown>; terminals: Map<string, TerminalInfo>; sequence: number; inFlight: Set<Promise<unknown>> };
 type Command = Extract<MainToHost, { kind: 'command' }>;
 
 /** One process, isolated runtimes. UI selection never changes a runtime's pipe or token. */
-export async function startWorkspaceManager(opts: HostBridgeOptions): Promise<HostBridge> {
+export async function startWorkspaceManager(opts: HostBridgeOptions & { maxWorkspaces?: number }): Promise<HostBridge> {
+  const maxWorkspaces = opts.maxWorkspaces ?? (Number(process.env.ORQ_MAX_WORKSPACES) || DEFAULT_MAX_WORKSPACES);
+  const registrySchema = z.object({ version: z.literal(1), selectedId: z.string().nullable(), workspaces: z.array(z.object({ id: z.string(), dir: z.string(), name: z.string() })).max(maxWorkspaces) });
   const entries = new Map<string, Entry>();
   const pids = new Map<string, number[]>();
   const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -159,7 +160,7 @@ export async function startWorkspaceManager(opts: HostBridgeOptions): Promise<Ho
         const path = canonical(dir);
         const existing = [...entries.values()].find((entry) => identity(entry.info.dir) === identity(path));
         if (existing) return activate(existing);
-        if (entries.size >= MAX_WORKSPACES) throw new OrqError('USAGE', 'Limite de 3 workspaces. Feche uma aba antes de abrir outro projeto.');
+        if (entries.size >= maxWorkspaces) throw new OrqError('USAGE', `Limite de ${maxWorkspaces} workspaces. Feche uma aba antes de abrir outro projeto.`);
         const id = randomUUID();
         const entry: Entry = { info: { id, dir: path, name: basename(path), status: 'opening', terminalCount: 0, busy: 0, waiting: 0 }, tail: Promise.resolve(), terminals: new Map(), sequence: 0, inFlight: new Set() };
         entries.set(id, entry);

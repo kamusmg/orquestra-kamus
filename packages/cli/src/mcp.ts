@@ -32,6 +32,19 @@ export const ORQUESTRA_TOOLS = [
   tool('regent.brief', 'Regente: entrega uma função existente a outro terminal.', { target: text, persona: text }, ['target', 'persona']),
   tool('persona.list', 'Lista as funções disponíveis no Orquestra.', {}, [], true),
   tool('persona.show', 'Lê o texto de uma função existente.', { name: text }, ['name'], true),
+  tool('floor.list', 'Lista os pisos / git worktrees isolados deste projeto no canvas.', {}, [], true),
+  tool('floor.create', 'Cria um novo piso (git worktree) isolado para desenvolvimento paralelo sem colisão de código.', { name: text, branch: text }, ['name']),
+  tool('floor.remove', 'Remove um piso (git worktree) isolado.', { name: text, force: { type: 'boolean' }, keepBranch: { type: 'boolean' } }, ['name']),
+  tool('android.devices', 'Lista dispositivos e emuladores Android conectados via ADB.', {}, [], true),
+  tool('android.snapshot', 'Captura árvore de acessibilidade do dispositivo Android ativo com refs (@e1, @e2).', { serial: text }, [], true),
+  tool('android.tap', 'Toca nas coordenadas X, Y da tela do Android.', { x: { type: 'number' }, y: { type: 'number' }, serial: text }, ['x', 'y']),
+  tool('android.type', 'Digita texto no campo focado do Android.', { text, serial: text }, ['text']),
+  tool('android.key', 'Pressiona tecla de hardware no Android (home, back, enter, tab, escape).', { key: text, serial: text }, ['key']),
+  tool('android.screenshot', 'Captura tela do dispositivo Android e salva PNG local.', { serial: text }, [], true),
+  tool('routine.list', 'Lista rotinas agendadas (cron/intervalo) no projeto.', {}, [], true),
+  tool('routine.create', 'Cria uma rotina agendada no canvas (ex: schedule "every 30m" ou "daily 09:00").', { name: text, command: text, schedule: text, target: text, preRun: text }, ['name', 'command', 'schedule']),
+  tool('routine.remove', 'Remove uma rotina agendada.', { name: text }, ['name']),
+  tool('routine.run', 'Executa uma rotina imediatamente e resolve preRun com {{output}}.', { name: text }, ['name']),
 ];
 
 /** MCP stdio: stdout contains only newline-delimited JSON-RPC, never credentials or logs. */

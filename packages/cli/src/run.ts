@@ -62,6 +62,15 @@ export async function run(argv: string[], io: Io): Promise<number> {
         persona: { type: 'string' },
         args: { type: 'string' },
         cwd: { type: 'string' },
+        floor: { type: 'string' },
+        branch: { type: 'string' },
+        force: { type: 'boolean' },
+        'keep-branch': { type: 'boolean' },
+        schedule: { type: 'string' },
+        every: { type: 'string' },
+        daily: { type: 'string' },
+        'pre-run': { type: 'string' },
+        target: { type: 'string' },
         'no-resume': { type: 'boolean' },
         global: { type: 'boolean' },
       },
@@ -85,6 +94,15 @@ type Flags = {
   persona?: string;
   args?: string;
   cwd?: string;
+  floor?: string;
+  branch?: string;
+  force?: boolean;
+  'keep-branch'?: boolean;
+  schedule?: string;
+  every?: string;
+  daily?: string;
+  'pre-run'?: string;
+  target?: string;
   'no-resume'?: boolean;
   global?: boolean;
 };
@@ -132,6 +150,7 @@ async function execute(
       return executeNote(args, flags, client, io);
     case 'portal': {
       const action = args[0];
+      if (action === 'devices') return executeAndroid(['devices', ...args.slice(1)], flags, client, io);
       if (action === 'list') { const result = await call(client, 'portal.list', {}); return { text: result.portals.map((portal) => `${portal.id}\t${portal.title}`).join('\n') || 'Nenhum navegador conectado. Conecte um portal a este terminal no canvas.', json: result }; }
       const id = required(args[1], 'o identificador do navegador (orq portal list)');
       let result: unknown;
@@ -141,9 +160,11 @@ async function execute(
       else if (action === 'type') result = await call(client, 'portal.type', { id, selector: required(args[2], 'o seletor CSS'), text: await readText(args[3], flags.file, io.stdin) });
       else if (action === 'scroll') result = await call(client, 'portal.scroll', { id, y: Number(required(args[2], 'a distância em pixels')) });
       else if (action === 'screenshot') result = await call(client, 'portal.screenshot', { id });
-      else throw new OrqError('USAGE', 'Use orq portal list, check, navigate, click, type, scroll ou screenshot.');
+      else throw new OrqError('USAGE', 'Use orq portal list, devices, check, navigate, click, type, scroll ou screenshot.');
       return { text: JSON.stringify(result, null, 2), json: result };
     }
+    case 'android':
+      return executeAndroid(args, flags, client, io);
     case 'new': {
       const name = required(args[0], 'o nome do terminal');
       if (!flags.agent || !['claude', 'agy', 'codex', 'shell'].includes(flags.agent)) throw new OrqError('USAGE', 'Falta --agent (claude, agy, codex ou shell).');
@@ -153,10 +174,15 @@ async function execute(
         ...(flags.persona ? { persona: flags.persona } : {}),
         ...(flags.args ? { args: parseSharedArgs(flags.args) } : {}),
         ...(flags.cwd ? { cwd: flags.cwd } : {}),
+        ...(flags.floor ? { floor: flags.floor } : {}),
         ...(flags['no-resume'] ? { resume: false } : {}),
       });
       return { text: `terminal ${result.name} criado`, json: result };
     }
+    case 'floor':
+      return executeFloor(args, flags, client, io);
+    case 'routine':
+      return executeRoutine(args, flags, client, io);
     case 'remove': {
       const name = required(args[0], 'o nome do nó');
       await call(client, 'regent.remove', { name });
@@ -213,6 +239,113 @@ async function executePersona(args: string[], flags: Flags, client: ClientOption
     }
     default:
       throw new OrqError('USAGE', `Subcomando de persona desconhecido: ${sub ?? '(nenhum)'}. Use list, show, write ou remove.`);
+  }
+}
+
+async function executeFloor(args: string[], flags: Flags, client: ClientOptions, _io: Io): Promise<Output> {
+  const [sub, name] = args;
+  switch (sub) {
+    case 'list': {
+      const result = await call(client, 'floor.list', {});
+      const lines = result.floors.map((floor) => `${floor.name}\t${floor.branch}\t${floor.isMain ? '(principal)' : floor.path}`);
+      return { text: lines.length > 0 ? lines.join('\n') : 'Nenhum piso.', json: result };
+    }
+    case 'create': {
+      const floorName = required(name, 'o nome do piso');
+      const result = await call(client, 'floor.create', { name: floorName, ...(flags.branch ? { branch: flags.branch } : {}) });
+      return { text: `piso ${result.name} criado na branch ${result.branch} (${result.path})`, json: result };
+    }
+    case 'remove': {
+      const floorName = required(name, 'o nome do piso');
+      await call(client, 'floor.remove', {
+        name: floorName,
+        ...(flags.force ? { force: true } : {}),
+        ...(flags['keep-branch'] ? { keepBranch: true } : {}),
+      });
+      return { text: `piso ${floorName} removido`, json: { name: floorName } };
+    }
+    default:
+      throw new OrqError('USAGE', `Subcomando de piso desconhecido: ${sub ?? '(nenhum)'}. Use list, create ou remove.`);
+  }
+}
+
+async function executeAndroid(args: string[], _flags: Flags, client: ClientOptions, _io: Io): Promise<Output> {
+  const [action, ...rest] = args;
+  switch (action) {
+    case 'devices': {
+      const result = await call(client, 'android.devices', {});
+      const lines = result.devices.map((d) => `${d.serial}\t${d.state}${d.model ? `\t${d.model}` : ''}`);
+      return { text: lines.length > 0 ? lines.join('\n') : 'Nenhum dispositivo Android conectado via ADB.', json: result };
+    }
+    case 'snapshot': {
+      const serial = rest[0];
+      const result = await call(client, 'android.snapshot', { ...(serial ? { serial } : {}) });
+      const lines = result.elements.map((e) => `${e.ref}\t${e.text || e.contentDesc || e.resourceId}\t[${e.center[0]}, ${e.center[1]}]`);
+      return { text: lines.length > 0 ? lines.join('\n') : 'Nenhum elemento interativo identificado.', json: result };
+    }
+    case 'tap': {
+      const x = Number(required(rest[0], 'coordenada X'));
+      const y = Number(required(rest[1], 'coordenada Y'));
+      const serial = rest[2];
+      await call(client, 'android.tap', { x, y, ...(serial ? { serial } : {}) });
+      return { text: `toque em [${x}, ${y}] enviado`, json: { x, y } };
+    }
+    case 'type': {
+      const text = required(rest[0], 'o texto a digitar');
+      const serial = rest[1];
+      await call(client, 'android.type', { text, ...(serial ? { serial } : {}) });
+      return { text: 'texto digitado no Android', json: { text } };
+    }
+    case 'key': {
+      const key = required(rest[0], 'a tecla (home, back, enter, tab, escape)');
+      const serial = rest[1];
+      await call(client, 'android.key', { key, ...(serial ? { serial } : {}) });
+      return { text: `tecla ${key} enviada`, json: { key } };
+    }
+    case 'screenshot':
+    case 'shot': {
+      const serial = rest[0];
+      const result = await call(client, 'android.screenshot', { ...(serial ? { serial } : {}) });
+      return { text: `captura salva em: ${result.path}`, json: result };
+    }
+    default:
+      throw new OrqError('USAGE', 'Use orq android devices, snapshot, tap <x> <y>, type <texto>, key <tecla> ou screenshot.');
+  }
+}
+
+async function executeRoutine(args: string[], flags: Flags, client: ClientOptions, io: Io): Promise<Output> {
+  const [sub, name, cmdText] = args;
+  switch (sub) {
+    case 'list': {
+      const result = await call(client, 'routine.list', {});
+      const lines = result.routines.map((r) => `${r.name}\t${r.schedule}\t${r.target ?? 'self'}\t${r.command}`);
+      return { text: lines.length > 0 ? lines.join('\n') : 'Nenhuma rotina agendada.', json: result };
+    }
+    case 'create': {
+      const routineName = required(name, 'o nome da rotina');
+      const command = await readText(cmdText, flags.file, io.stdin);
+      const schedule = flags.schedule ?? (flags.every ? `every ${flags.every}` : flags.daily ? `daily ${flags.daily}` : 'every 1h');
+      const result = await call(client, 'routine.create', {
+        name: routineName,
+        command,
+        schedule,
+        ...(flags.target ? { target: flags.target } : {}),
+        ...(flags['pre-run'] ? { preRun: flags['pre-run'] } : {}),
+      });
+      return { text: `rotina ${result.name} criada (${schedule})`, json: result };
+    }
+    case 'remove': {
+      const routineName = required(name, 'o nome da rotina');
+      await call(client, 'routine.remove', { name: routineName });
+      return { text: `rotina ${routineName} removida`, json: { name: routineName } };
+    }
+    case 'run': {
+      const routineName = required(name, 'o nome da rotina');
+      const result = await call(client, 'routine.run', { name: routineName });
+      return { text: `disparo de rotina: ${result.payload}`, json: result };
+    }
+    default:
+      throw new OrqError('USAGE', 'Subcomando de rotina desconhecido. Use list, create, remove ou run.');
   }
 }
 

@@ -120,7 +120,7 @@ export const hostMethodSchemas = {
   'group.fit': { params: groupNamed, result: groupLayoutSchema },
   'group.remove': { params: groupNamed, result: groupLayoutSchema },
   'group.layout': { params: empty, result: groupLayoutSchema },
-  'workspace.list': { params: empty, result: z.object({ workspaces: z.array(workspaceInfoSchema).max(3), selectedId: z.string().nullable() }) },
+  'workspace.list': { params: empty, result: z.object({ workspaces: z.array(workspaceInfoSchema).max(32), selectedId: z.string().nullable() }) },
   'workspace.activate': { params: z.object({ id: z.string().min(1) }), result: projectSnapshotSchema },
   'files.list': {
     params: z.object({ path: z.string().default('') }),

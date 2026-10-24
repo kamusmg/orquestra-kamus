@@ -1,5 +1,16 @@
 import { OrqError, type MethodName, type Params, type Result } from '@orquestra/shared';
 import type { AskBroker } from './ask-broker.js';
+import { createFloor, listFloors, removeFloor } from './floors.js';
+import { RoutineStore, resolveRoutinePayload } from './routines.js';
+import { join } from 'node:path';
+import {
+  listAndroidDevices,
+  snapshotAndroid,
+  tapAndroid,
+  typeAndroid,
+  keyAndroid,
+  screenshotAndroid,
+} from './android.js';
 import type { Note, NoteStore } from './notes.js';
 import type { Caller, Dispatch } from './pipe-server.js';
 import type { Session } from './session.js';
@@ -27,6 +38,7 @@ export type HandlerDeps = {
   session: (name: string) => Session | undefined;
   onNoteChanged: (note: Note, createdBy: string | null) => void;
   isRegent: (name: string) => boolean;
+  cwd?: (name: string) => string | undefined;
   regent?: RegentHandler;
   browser?: BrowserHandler;
   browserNodes?: () => BrowserNode[];
@@ -149,6 +161,79 @@ export function createHandlers(deps: HandlerDeps): Dispatch {
     'persona.show': regentCommand('persona.show'),
     'persona.write': regentCommand('persona.write'),
     'persona.remove': regentCommand('persona.remove'),
+    'floor.list': async (_params, caller) => {
+      const dir = deps.cwd?.(caller.session) ?? process.cwd();
+      const floors = await listFloors(dir);
+      return { floors };
+    },
+    'floor.create': async (params, caller) => {
+      const dir = deps.cwd?.(caller.session) ?? process.cwd();
+      const floor = await createFloor(dir, params.name, { branch: params.branch });
+      return floor;
+    },
+    'floor.remove': async (params, caller) => {
+      const dir = deps.cwd?.(caller.session) ?? process.cwd();
+      await removeFloor(dir, params.name, { force: params.force, keepBranch: params.keepBranch });
+      return {};
+    },
+    'android.devices': async () => {
+      const devices = await listAndroidDevices();
+      return { devices };
+    },
+    'android.snapshot': async (params) => {
+      const snapshot = await snapshotAndroid(params.serial);
+      return snapshot;
+    },
+    'android.tap': async (params) => {
+      await tapAndroid(params.x, params.y, params.serial);
+      return {};
+    },
+    'android.type': async (params) => {
+      await typeAndroid(params.text, params.serial);
+      return {};
+    },
+    'android.key': async (params) => {
+      await keyAndroid(params.key, params.serial);
+      return {};
+    },
+    'android.screenshot': async (params) => {
+      const path = await screenshotAndroid(params.serial);
+      return { path };
+    },
+    'routine.list': async (_params, caller) => {
+      const dir = deps.cwd?.(caller.session) ?? process.cwd();
+      const store = new RoutineStore({ file: join(dir, '.orquestra', 'routines.json') });
+      return { routines: store.list() };
+    },
+    'routine.create': async (params, caller) => {
+      const dir = deps.cwd?.(caller.session) ?? process.cwd();
+      const store = new RoutineStore({ file: join(dir, '.orquestra', 'routines.json') });
+      const id = `routine-${Date.now()}`;
+      store.write({
+        id,
+        name: params.name,
+        command: params.command,
+        schedule: params.schedule,
+        target: params.target,
+        preRun: params.preRun,
+        enabled: true,
+      });
+      return { id, name: params.name };
+    },
+    'routine.remove': async (params, caller) => {
+      const dir = deps.cwd?.(caller.session) ?? process.cwd();
+      const store = new RoutineStore({ file: join(dir, '.orquestra', 'routines.json') });
+      store.remove(params.name);
+      return {};
+    },
+    'routine.run': async (params, caller) => {
+      const dir = deps.cwd?.(caller.session) ?? process.cwd();
+      const store = new RoutineStore({ file: join(dir, '.orquestra', 'routines.json') });
+      const routine = store.get(params.name);
+      if (!routine) throw new OrqError('NOT_FOUND', `Rotina ${params.name} não encontrada.`);
+      const payload = await resolveRoutinePayload(routine);
+      return { payload };
+    },
   };
 
   return (method, params, caller, signal) =>

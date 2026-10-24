@@ -40,6 +40,7 @@ import {
   loadWorkspace,
   PersonaStore,
   RecentProjects,
+  floorDirectory,
   saveWorkspace,
   SettingsStore,
   WorkspaceSaver,
@@ -83,6 +84,8 @@ export type HostBridgeOptions = {
   settingsFile: string;
   /** Funções globais dos agentes (personas.json na pasta de dados). */
   personasFile: string;
+  /** Inicializa personas padrão de segurança e revisão se o arquivo não existir. */
+  defaultPersonas?: boolean;
   /** Espera depois da última mudança antes de gravar o workspace (padrão 1 s). */
   saveDelayMs?: number;
   /** Pasta de configuração do Claude Code, onde ficam os jobs em segundo plano (padrão: CLAUDE_CONFIG_DIR ou ~/.claude). */
@@ -122,7 +125,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
   );
   const recent = new RecentProjects({ file: opts.recentFile, log: opts.log });
   const settings = new SettingsStore({ file: opts.settingsFile, log: opts.log });
-  const personaStore = new PersonaStore({ file: opts.personasFile, log: opts.log });
+  const personaStore = new PersonaStore({ file: opts.personasFile, log: opts.log, defaults: opts.defaultPersonas });
   const usageCache = opts.usageState?.cache ?? new Map<string, { expiresAt: number; value: SubscriptionUsage }>();
   const usageAbort = new AbortController();
   const usagePids = new Set<number>();
@@ -292,10 +295,11 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       const resolvedPersona = params.persona ? resolvePersona(params.persona) : undefined;
       const authorRect = current.state.rectOf(caller) ?? { x: 80, y: 80, ...TERMINAL_SIZE };
       const rect = { ...placeBeside(authorRect, Object.values(current.state.layout()), TERMINAL_SIZE), ...TERMINAL_SIZE };
+      const effectiveCwd = params.floor ? floorDirectory(current.project.dir, params.floor) : params.cwd;
       const session = await createTerminalFor({
         name: params.name,
         agent: params.agent,
-        cwd: params.cwd,
+        cwd: effectiveCwd,
         resume: params.resume,
         args: params.args,
         regente: false,

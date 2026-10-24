@@ -19,4 +19,7 @@ export * from './other-subscription-usage.js';
 export { childEnv } from './env.js';
 export * from './project-files.js';
 export * from './personas.js';
+export * from './floors.js';
+export * from './android.js';
+export * from './routines.js';
 export type { Note } from './notes.js';
