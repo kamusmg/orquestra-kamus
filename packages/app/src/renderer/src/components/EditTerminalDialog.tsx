@@ -1,5 +1,5 @@
 import { formatArgs, parseArgs, reservedArgError } from '@orquestra/shared/args';
-import { terminalNameSchema } from '@orquestra/shared/host-protocol';
+import { terminalNameSchema, type HostAgent as AgentKind } from '@orquestra/shared/host-protocol';
 import { useState } from 'react';
 import type { CommandApi } from '../api';
 import { appStore, useApp } from '../store';
@@ -10,6 +10,7 @@ const sameArgs = (a: string[], b: string[]) => a.length === b.length && a.every(
 export function EditTerminalDialog({ name, api, onClose }: { name: string; api: CommandApi; onClose(): void }) {
   const view = useApp((state) => state.terminals[name]);
   const [newName, setNewName] = useState(name);
+  const [agent, setAgent] = useState<AgentKind>(view?.agent ?? 'claude');
   const [cwd, setCwd] = useState(view?.cwd ?? '');
   const [argsText, setArgsText] = useState(formatArgs(view?.args ?? []));
   const [resume, setResume] = useState(view?.resume ?? true);
@@ -31,18 +32,27 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
     } catch (parseError) {
       return setError((parseError as Error).message);
     }
-    const reserved = reservedArgError(view.agent, args);
+    const reserved = reservedArgError(agent, args);
     if (reserved) return setError(reserved);
 
-    const changes: { newName?: string; cwd?: string; args?: string[]; resume?: boolean; regente?: boolean; monitor?: boolean } = {};
+    const changes: {
+      newName?: string;
+      agent?: AgentKind;
+      cwd?: string;
+      args?: string[];
+      resume?: boolean;
+      regente?: boolean;
+      monitor?: boolean;
+    } = {};
     if (trimmed !== name) changes.newName = trimmed;
+    if (agent !== view.agent) changes.agent = agent;
     if (cwd !== view.cwd) changes.cwd = cwd;
     if (!sameArgs(args, view.args)) changes.args = args;
-    if (view.agent !== 'shell' && resume !== view.resume) changes.resume = resume;
+    if (agent !== 'shell' && resume !== view.resume) changes.resume = resume;
     if (regente !== view.regente) changes.regente = regente;
     if (monitor !== view.monitor) changes.monitor = monitor;
     if (Object.keys(changes).length === 0) return onClose();
-    const relaunch = changes.cwd !== undefined || changes.args !== undefined;
+    const relaunch = agent !== view.agent || changes.cwd !== undefined || changes.args !== undefined;
     const busy = view.state === 'busy' || view.queued > 0;
     if (relaunch && busy && !window.confirm(`${name} está ocupado ou tem pedidos na fila. Salvar reinicia o agente e interrompe o trabalho. Continuar?`)) return;
 
@@ -68,7 +78,27 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
         }}
       >
         <h2>Editar terminal</h2>
-        <p className="muted">Tipo: {view.agent}</p>
+        <p className="muted">Tipo: {agent}</p>
+        <label className="dialog-field">
+          <span>Agente (Hot-Swap)</span>
+          <select
+            data-testid="edit-terminal-agent"
+            value={agent}
+            onChange={(event) => {
+              const nextAgent = event.target.value as AgentKind;
+              setAgent(nextAgent);
+              if (nextAgent === 'shell') {
+                setResume(false);
+                setRegente(false);
+              }
+            }}
+          >
+            <option value="claude">claude</option>
+            <option value="agy">agy</option>
+            <option value="codex">codex</option>
+            <option value="shell">shell</option>
+          </select>
+        </label>
         <label>
           Nome
           <input data-testid="edit-terminal-name" value={newName} onChange={(event) => setNewName(event.target.value)} disabled={submitting} autoFocus />
@@ -79,14 +109,14 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
         </label>
         <label>
           Argumentos
-          <ArgsField agent={view.agent} value={argsText} onChange={setArgsText} testId="edit-terminal-args" disabled={submitting} />
+          <ArgsField agent={agent} value={argsText} onChange={setArgsText} testId="edit-terminal-args" disabled={submitting} />
         </label>
         <label className="check">
           <input
             type="checkbox"
             data-testid="edit-terminal-resume"
-            checked={resume && view.agent !== 'shell'}
-            disabled={submitting || view.agent === 'shell'}
+            checked={resume && agent !== 'shell'}
+            disabled={submitting || agent === 'shell'}
             onChange={(event) => setResume(event.target.checked)}
           />
           Retomar a sessão ao reabrir o projeto

@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { defaultMonitor, OrqError, reservedArgError, terminalNameSchema, type QueueEntry, type SessionState } from '@orquestra/shared';
+import { defaultMonitor, OrqError, reservedArgError, terminalNameSchema, type AgentKind, type QueueEntry, type SessionState } from '@orquestra/shared';
 import type { AgentAdapter } from './adapters/types.js';
 import { AskBroker } from './ask-broker.js';
 import { CLAUDE_CLEAR_INPUT, ClaudeStatusWatcher } from './adapters/claude-status.js';
@@ -27,7 +27,7 @@ const MAX_SESSION_DIRS = 20;
 
 export type TerminalDescriptor = { id: string; name: string; agent: string; cwd: string; args: string[]; resume: boolean; agentSessionId: string | null; regente: boolean; persona: string | null; monitor: boolean; unloaded?: boolean; /** Pastas de sessão de cada lançamento (vínculo com o job em segundo plano); não vai para o workspace. */ sessionDirs?: string[] };
 export type CreateTerminalInput = { name: string; agent: string; cwd: string; id?: string; args?: string[]; resume?: boolean; agentSessionId?: string | null; regente?: boolean; persona?: string | null; monitor?: boolean; unloaded?: boolean; sessionDirs?: string[] };
-export type TerminalChanges = { newName?: string; cwd?: string; args?: string[]; resume?: boolean; regente?: boolean; monitor?: boolean };
+export type TerminalChanges = { newName?: string; agent?: AgentKind; cwd?: string; args?: string[]; resume?: boolean; regente?: boolean; monitor?: boolean };
 
 export type OrquestraOptions = {
   pipePath: string;
@@ -83,6 +83,7 @@ export type Orquestra = {
   /** Encerra e lança de novo o mesmo agente na mesma pasta, com o mesmo nome e as mesmas conexões. */
   restartTerminal(name: string): Promise<Session>;
   unloadTerminal(name: string): Promise<Session>;
+  unloadIdleTerminals(): Promise<string[]>;
   /** Edita nome, pasta, argumentos e retomada de um terminal, relançando quando preciso. */
   updateTerminal(name: string, changes: TerminalChanges): Promise<Session>;
   queue(name: string): QueueEntry[];
@@ -415,26 +416,50 @@ export async function createOrquestra(opts: OrquestraOptions): Promise<Orquestra
     return entry.session;
   }
 
+  async function unloadIdleTerminals(): Promise<string[]> {
+    const unloaded: string[] = [];
+    for (const [name, entry] of sessions) {
+      const config = configs.get(name);
+      if (config && !config.unloaded && entry.session.state === 'idle' && broker.queued(name) === 0) {
+        await unloadTerminal(name);
+        unloaded.push(name);
+      }
+    }
+    return unloaded;
+  }
+
   async function updateTerminal(name: string, changes: TerminalChanges): Promise<Session> {
     const config = configs.get(name);
     if (!config) throw new OrqError('NOT_FOUND', `Terminal ${name} não existe.`);
     const newName = changes.newName ?? name;
+    const agent = changes.agent ?? config.agent;
+    const agentChanged = agent !== config.agent;
     const cwd = changes.cwd ?? config.cwd;
     const args = changes.args ?? config.args;
     if (newName !== name && topology.kindOf(newName)) throw new OrqError('USAGE', `Já existe um nó chamado ${newName}. Escolha outro nome.`);
     if (cwd !== config.cwd && (!existsSync(cwd) || !statSync(cwd).isDirectory())) {
       throw new OrqError('USAGE', `A pasta ${cwd} não existe. Crie a pasta ou escolha outra.`);
     }
-    const reserved = reservedArgError(config.agent, args);
+    const reserved = reservedArgError(agent, args);
     if (reserved) throw new OrqError('USAGE', reserved);
     if (newName !== name && broker.queued(name) > 0) throw new OrqError('USAGE', `${name} tem pedidos na fila. Espere a fila esvaziar para renomear.`);
 
-    const relaunch = cwd !== config.cwd || args.length !== config.args.length || args.some((arg, index) => arg !== config.args[index]);
+    const relaunch =
+      agentChanged ||
+      cwd !== config.cwd ||
+      args.length !== config.args.length ||
+      args.some((arg, index) => arg !== config.args[index]);
     const changed = Object.keys(changes).filter((key) => changes[key as keyof TerminalChanges] !== undefined);
     if (newName !== name) renameTerminal(name, newName);
     config.regente = changes.regente ?? config.regente;
     config.resume = changes.resume ?? config.resume;
-    config.monitor = changes.monitor ?? config.monitor;
+    if (agentChanged) {
+      config.agent = agent;
+      config.agentSessionId = null;
+      config.monitor = changes.monitor ?? defaultMonitor(agent);
+    } else {
+      config.monitor = changes.monitor ?? config.monitor;
+    }
     let session = sessions.get(newName)!.session;
     if (relaunch) {
       config.cwd = cwd;
@@ -477,6 +502,7 @@ export async function createOrquestra(opts: OrquestraOptions): Promise<Orquestra
     renameTerminal,
     restartTerminal,
     unloadTerminal,
+    unloadIdleTerminals,
     updateTerminal,
     queue: (name) => broker.list(name),
     connect: (a, b) => topology.connect(a, b),

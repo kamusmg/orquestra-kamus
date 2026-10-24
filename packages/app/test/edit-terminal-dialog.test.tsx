@@ -120,5 +120,22 @@ describe('EditTerminalDialog', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(calls).toEqual([['terminal.update', { name: 'A', monitor: false }]]);
   });
+
+  it('permite trocar o agente via hot-swap e avisa sobre reinício', async () => {
+    appStore.getState().applyEvent({ type: 'terminal.state', name: 'A', state: 'busy', queued: 0 });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { api, calls } = fakeApi(info({ name: 'A', agent: 'agy' }));
+    const onClose = vi.fn();
+    render(<EditTerminalDialog name="A" api={api} onClose={onClose} />);
+    const agentSelect = screen.getByTestId('edit-terminal-agent');
+    expect((agentSelect as HTMLSelectElement).value).toBe('claude');
+    fireEvent.change(agentSelect, { target: { value: 'agy' } });
+    expect(screen.getByText('Tipo: agy')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('edit-terminal-submit'));
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/A está ocupado ou tem pedidos na fila. Salvar reinicia o agente/));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(calls).toEqual([['terminal.update', { name: 'A', agent: 'agy' }]]);
+    confirm.mockRestore();
+  });
 });
 

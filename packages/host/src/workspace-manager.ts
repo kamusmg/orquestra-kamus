@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { z } from 'zod';
-import { OrqError, parseHostParams, type HostToMain, type MainToHost, type WorkspaceInfo, type ProjectSnapshot, type TerminalInfo } from '@orquestra/shared';
+import { OrqError, parseHostParams, type HostToMain, type MainToHost, type WorkspaceInfo, type ProjectSnapshot, type TerminalInfo, type HostCommand } from '@orquestra/shared';
 import { startHostBridge, type HostBridge, type HostBridgeOptions, type UsageState } from './bridge.js';
 import { FlowWorkerPool } from './flow-workers.js';
 
@@ -206,34 +206,123 @@ export async function startWorkspaceManager(opts: HostBridgeOptions & { maxWorks
         const info = result as TerminalInfo;
         const oldName = (message.params as { name?: string }).name;
         if (oldName && oldName !== info.name) entry.terminals.delete(oldName);
-        entry.terminals.set(info.name, info);
+        if (info && info.name) entry.terminals.set(info.name, info);
+      } else if (message.method === 'terminal.unloadIdle') {
+        const { unloaded } = result as { unloaded: string[] };
+        for (const name of unloaded) {
+          const prev = entry.terminals.get(name);
+          if (prev) entry.terminals.set(name, { ...prev, state: 'exited', unloaded: true });
+        }
       } else if (message.method === 'terminal.duplicate') {
         const info = (result as { info: TerminalInfo }).info; entry.terminals.set(info.name, info);
       }
       return result;
     };
-    if (/^(terminal\.(create|update|remove|restart|unload|duplicate|rename|presentation)|note\.|edge\.|layout\.|group\.|portal\.)/.test(message.method)) return enqueue(entry, work);
+    if (/^(terminal\.(create|update|remove|restart|unload|unloadIdle|duplicate|rename|presentation)|note\.|edge\.|layout\.|group\.|portal\.)/.test(message.method)) return enqueue(entry, work);
     // File reads/screen settling must not hold up keyboard input. Close drains these calls.
     const task = work();
     entry.inFlight.add(task);
     try { return await task; } finally { entry.inFlight.delete(task); }
   }
 
+  async function unloadIdleAll(): Promise<string[]> {
+    const all: string[] = [];
+    for (const entry of entries.values()) {
+      if (entry.bridge?.unloadIdleTerminals) {
+        const res = await entry.bridge.unloadIdleTerminals();
+        all.push(...res);
+      }
+    }
+    return all;
+  }
+
+  async function handle(message: Exclude<MainToHost, { kind: 'shutdown' }> | HostCommand | string): Promise<unknown> {
+    if (typeof message === 'string') {
+      let parsed: unknown;
+      try { parsed = JSON.parse(message); } catch { throw new OrqError('USAGE', 'JSON inválido.'); }
+      return handle(parsed as Exclude<MainToHost, { kind: 'shutdown' }> | HostCommand);
+    }
+    if ('type' in (message as object)) {
+      const cmd = message as HostCommand;
+      try {
+        const result = await (async () => {
+          switch (cmd.type) {
+            case 'unload-idle-terminals': {
+              if (cmd.workspace) {
+                const entry = entries.get(cmd.workspace);
+                if (!entry?.bridge?.unloadIdleTerminals) return { unloaded: [] };
+                const unloaded = await entry.bridge.unloadIdleTerminals();
+                return { unloaded };
+              }
+              const unloaded = await unloadIdleAll();
+              return { unloaded };
+            }
+            case 'ping-control':
+              return { pid: process.pid, rssBytes: process.memoryUsage().rss };
+            case 'list': {
+              return list();
+            }
+            case 'update-terminal': {
+              const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
+              if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');
+              const changes = { ...(cmd.changes ?? {}), ...(cmd.agent ? { agent: cmd.agent } : {}) };
+              return call(targetBridge, 'terminal.update', { name: cmd.name, ...changes });
+            }
+            case 'unload-terminal': {
+              const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
+              if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');
+              return call(targetBridge, 'terminal.unload', { name: cmd.name });
+            }
+            case 'restart-terminal': {
+              const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
+              if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');
+              return call(targetBridge, 'terminal.restart', { name: cmd.name });
+            }
+            case 'send-input': {
+              const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
+              if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');
+              return call(targetBridge, 'terminal.input', { name: cmd.name, data: cmd.data });
+            }
+            case 'read-output': {
+              const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
+              if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');
+              const snap = await call(targetBridge, 'terminal.snapshot', { name: cmd.name }) as { data: string };
+              const lines = cmd.lines ?? 40;
+              const text = snap.data.split('\n').slice(-lines).join('\n');
+              return { text };
+            }
+            case 'shutdown': {
+              return { ok: true };
+            }
+          }
+        })();
+        return { id: cmd.id, ok: true, result };
+      } catch (error) {
+        if (error instanceof OrqError) {
+          return { id: cmd.id, ok: false, error: { code: error.code, message: error.message } };
+        }
+        const messageStr = error instanceof Error ? error.message : 'Erro interno.';
+        return { id: cmd.id, ok: false, error: { code: 'INTERNAL', message: messageStr } };
+      }
+    }
+    const main = message as Exclude<MainToHost, { kind: 'shutdown' }>;
+    if (main.kind === 'portal-reply') { const bridge = portalRoutes.get(main.id); portalRoutes.delete(main.id); if (bridge) await bridge.handle(main); return; }
+    if (main.kind === 'confirm-reply') {
+      const bridge = confirms.get(main.id); confirms.delete(main.id);
+      if (bridge) await bridge.handle(main);
+      return;
+    }
+    try { opts.send({ kind: 'response', id: main.id, ok: true, result: await execute(main) }); }
+    catch (error) {
+      if (!(error instanceof OrqError)) opts.log.error({ err: error, method: main.method }, 'erro no gerenciador de workspaces');
+      const failure = error instanceof OrqError ? error : new OrqError('INTERNAL', 'Erro interno do Orquestra. Veja o log.');
+      opts.send({ kind: 'response-error', id: main.id, error: { code: failure.code, message: failure.message } });
+    }
+  }
+
   return {
-    async handle(message) {
-      if (message.kind === 'portal-reply') { const bridge = portalRoutes.get(message.id); portalRoutes.delete(message.id); if (bridge) await bridge.handle(message); return; }
-      if (message.kind === 'confirm-reply') {
-        const bridge = confirms.get(message.id); confirms.delete(message.id);
-        if (bridge) await bridge.handle(message);
-        return;
-      }
-      try { opts.send({ kind: 'response', id: message.id, ok: true, result: await execute(message) }); }
-      catch (error) {
-        if (!(error instanceof OrqError)) opts.log.error({ err: error, method: message.method }, 'erro no gerenciador de workspaces');
-        const failure = error instanceof OrqError ? error : new OrqError('INTERNAL', 'Erro interno do Orquestra. Veja o log.');
-        opts.send({ kind: 'response-error', id: message.id, error: { code: failure.code, message: failure.message } });
-      }
-    },
+    handle,
+    unloadIdleTerminals: () => unloadIdleAll(),
     dispatchForTest: (method, params, caller) => {
       const entry = selectedId ? entries.get(selectedId) : undefined;
       return (entry?.bridge ?? globalBridge).dispatchForTest(method, params, caller);

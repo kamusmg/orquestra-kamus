@@ -17,6 +17,19 @@ export type NoteInfo = z.infer<typeof noteInfoSchema>;
 
 export const hostAgentSchema = z.enum(['claude', 'agy', 'codex', 'shell']);
 export type HostAgent = z.infer<typeof hostAgentSchema>;
+export const agentKindSchema = hostAgentSchema;
+export type AgentKind = HostAgent;
+
+export const terminalChangesSchema = z.object({
+  newName: terminalNameSchema.optional(),
+  agent: agentKindSchema.optional(),
+  cwd: z.string().min(1).optional(),
+  args: z.array(z.string()).optional(),
+  resume: z.boolean().optional(),
+  regente: z.boolean().optional(),
+  monitor: z.boolean().optional(),
+});
+export type TerminalChanges = z.infer<typeof terminalChangesSchema>;
 
 export const terminalInfoSchema = z.object({
   id: z.string().uuid().optional(),
@@ -157,6 +170,7 @@ export const hostMethodSchemas = {
     params: z.object({
       name: z.string().min(1),
       newName: terminalNameSchema.optional(),
+      agent: agentKindSchema.optional(),
       cwd: z.string().min(1).optional(),
       args: z.array(z.string()).optional(),
       resume: z.boolean().optional(),
@@ -165,6 +179,7 @@ export const hostMethodSchemas = {
     }),
     result: terminalInfoSchema,
   },
+  'terminal.unloadIdle': { params: empty, result: z.object({ unloaded: z.array(z.string()) }) },
   'terminal.remove': { params: named, result: empty },
   'terminal.restart': { params: named, result: terminalInfoSchema },
   'terminal.unload': { params: named, result: terminalInfoSchema },
@@ -285,6 +300,37 @@ export const hostToMainSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('confirm'), id: z.string(), message: z.string() }),
 ]);
 export type HostToMain = z.infer<typeof hostToMainSchema>;
+
+const cmdId = z.union([z.number(), z.string()]);
+const cmdWorkspace = z.string().optional();
+
+export const commandSchema = z.discriminatedUnion('type', [
+  z.object({ id: cmdId, type: z.literal('unload-idle-terminals'), workspace: cmdWorkspace }),
+  z.object({ id: cmdId, type: z.literal('ping-control') }),
+  z.object({ id: cmdId, type: z.literal('list') }),
+  z.object({ id: cmdId, type: z.literal('update-terminal'), name: z.string(), agent: agentKindSchema.optional(), changes: terminalChangesSchema.partial().optional(), workspace: cmdWorkspace }),
+  z.object({ id: cmdId, type: z.literal('unload-terminal'), name: z.string(), workspace: cmdWorkspace }),
+  z.object({ id: cmdId, type: z.literal('restart-terminal'), name: z.string(), workspace: cmdWorkspace }),
+  z.object({ id: cmdId, type: z.literal('send-input'), name: z.string(), data: z.string(), workspace: cmdWorkspace }),
+  z.object({ id: cmdId, type: z.literal('read-output'), name: z.string(), lines: z.number().int().positive().optional(), workspace: cmdWorkspace }),
+  z.object({ id: cmdId, type: z.literal('shutdown') }),
+]);
+
+export type HostCommand =
+  | { id: number; type: 'unload-idle-terminals'; workspace?: string }
+  | { id: number; type: 'ping-control' }
+  | { id: number | string; type: 'list' }
+  | { id: number | string; type: 'update-terminal'; name: string; agent?: AgentKind; changes?: Partial<TerminalChanges>; workspace?: string }
+  | { id: number | string; type: 'unload-terminal'; name: string; workspace?: string }
+  | { id: number | string; type: 'restart-terminal'; name: string; workspace?: string }
+  | { id: number | string; type: 'send-input'; name: string; data: string; workspace?: string }
+  | { id: number | string; type: 'read-output'; name: string; lines?: number; workspace?: string }
+  | { id: number | string; type: 'shutdown' };
+
+export type HostMessage = HostToMain | HostEvent | Record<string, unknown>;
+export type HostResponse =
+  | { id: number | string; ok: true; result: unknown }
+  | { id: number | string; ok: false; error: { code: string; message: string } };
 
 /** Código de saída do núcleo quando o pipe já está em uso (outro Orquestra ou o harness). */
 export const HOST_EXIT_PIPE_BUSY = 3;

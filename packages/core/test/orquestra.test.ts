@@ -784,4 +784,53 @@ describe('rascunho do usuário depois do Esc antecipado', () => {
     await session.handleHook('Stop', { last_assistant_message: 'resposta ao outro agente' });
     await expect(answer).resolves.toMatchObject({ answer: 'resposta ao outro agente' });
   });
+
+  it('updateTerminal switches agent adapter while preserving topology connections', async () => {
+    const { orq } = await setupOrquestra({
+      adapters: {
+        claude: { ...createFakeAdapter(), kind: 'claude' },
+        agy: { ...createFakeAdapter(), kind: 'agy' },
+        fake: createFakeAdapter(),
+      },
+    });
+    const terminalA = orq.createTerminal({ name: 'A', agent: 'claude', cwd: tmpdir(), agentSessionId: 'sess-123' });
+    orq.createTerminal({ name: 'B', agent: 'fake', cwd: tmpdir() });
+    orq.connect('A', 'B');
+
+    expect(orq.topology.isConnected('A', 'B')).toBe(true);
+    expect(terminalA.adapter.kind).toBe('claude');
+
+    const updated = await orq.updateTerminal('A', { agent: 'agy' });
+    expect(updated.name).toBe('A');
+    expect(updated.adapter.kind).toBe('agy');
+    expect(orq.topology.isConnected('A', 'B')).toBe(true);
+    const desc = orq.describeTerminals().find((t) => t.name === 'A');
+    expect(desc?.agent).toBe('agy');
+    expect(desc?.agentSessionId).toBeNull();
+    expect(desc?.monitor).toBe(true);
+  });
+
+  it('unloadIdleTerminals unloads only idle terminals with empty queue', async () => {
+    const { orq } = await setupOrquestra({
+      adapters: { fake: createFakeAdapter() },
+    });
+    const a = orq.createTerminal({ name: 'A', agent: 'fake', cwd: tmpdir() });
+    const b = orq.createTerminal({ name: 'B', agent: 'fake', cwd: tmpdir() });
+    const c = orq.createTerminal({ name: 'C', agent: 'fake', cwd: tmpdir() });
+
+    await waitFor(() => a.state === 'idle' && b.state === 'idle' && c.state === 'idle');
+
+    // B has a queued prompt
+    void orq.broker.submit({ asker: 'A', target: 'B', text: 'pendente', timeoutMs: 10_000 }).catch(() => {});
+    expect(orq.broker.queued('B')).toBe(1);
+
+    // C is unloaded already
+    await orq.unloadTerminal('C');
+    expect(orq.describeTerminals().find((t) => t.name === 'C')?.unloaded).toBe(true);
+
+    const unloaded = await orq.unloadIdleTerminals();
+    expect(unloaded).toEqual(['A']);
+    expect(orq.describeTerminals().find((t) => t.name === 'A')?.unloaded).toBe(true);
+    expect(orq.describeTerminals().find((t) => t.name === 'B')?.unloaded).toBeUndefined();
+  });
 });

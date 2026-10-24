@@ -11,6 +11,7 @@ import { AboutDialog } from '../components/AboutDialog';
 
 type Recent = { dir: string; name: string; openedAt: string };
 type Row = { dir: string; name: string; workspace?: WorkspaceInfo };
+const MAX_WORKSPACES = 10;
 const defaultApi = createCommandApi((...args) => window.orquestra?.invoke(...args));
 const sameDir = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 type MenuItem = { id: string; label: string; hint?: string; action?: AppAction };
@@ -22,16 +23,22 @@ const MENU_ITEMS: MenuItem[] = [
   { id: 'quit', action: 'quit', label: 'Sair' },
 ];
 
+export interface SidebarProps {
+  api?: CommandApi;
+  onOpenSettings(): void;
+  onOpenPersonas(): void;
+  onUnloadIdle?(): void;
+}
+
 export function Sidebar({
   api = defaultApi,
   onOpenSettings,
   onOpenPersonas,
-}: {
-  api?: CommandApi;
-  onOpenSettings(): void;
-  onOpenPersonas(): void;
-}) {
+  onUnloadIdle,
+}: SidebarProps) {
   const project = useApp((state) => state.project);
+  const terminals = useApp((state) => state.terminals);
+  const terminalList = Object.values(terminals);
   const { workspaces, selectedId, changing } = useWorkspaces((state) => state);
   const [recent, setRecent] = useState<Recent[]>([]);
   const [filter, setFilter] = useState('');
@@ -101,8 +108,18 @@ export function Sidebar({
       <div className="side-sec">
         <span>PROJETOS</span>
         <span className="side-sec-actions">
-          <span className="workspace-count" title="Máximo de três workspaces simultâneos">{workspaces.length}/3</span>
-          <button className="side-add" disabled={changing} data-testid="open-project" title="Abrir pasta…" onClick={() => void pick()}>+</button>
+          <span className="workspace-count" title={workspaces.length >= MAX_WORKSPACES ? 'Máximo de dez workspaces simultâneos' : 'Máximo de dez workspaces simultâneos'}>
+            {workspaces.length}/{MAX_WORKSPACES}
+          </span>
+          <button
+            className="side-add"
+            disabled={changing || workspaces.length >= MAX_WORKSPACES}
+            data-testid="open-project"
+            title={workspaces.length >= MAX_WORKSPACES ? 'Máximo de dez workspaces simultâneos' : 'Abrir outro workspace'}
+            onClick={() => void pick()}
+          >
+            +
+          </button>
         </span>
       </div>
       <input className="side-filter" data-testid="recent-filter" placeholder="Filtrar" value={filter} onChange={(event) => setFilter(event.target.value)} />
@@ -129,6 +146,23 @@ export function Sidebar({
           </div>
         );
       })}
+      </div>
+      <div className="side-sec">
+        <span>TERMINAIS</span>
+        <span className="side-sec-actions">
+          <span className="sidebar-SectionCount">{terminalList.length}</span>
+          {onUnloadIdle && terminalList.some((t) => !t.unloaded && t.state === 'idle') ? (
+            <button
+              type="button"
+              className="sidebar-AddWorkspace"
+              data-testid="sidebar-unload-idle"
+              title="Descarregar terminais ociosos para liberar RAM (Ctrl+Shift+U)"
+              onClick={onUnloadIdle}
+            >
+              Liberar RAM
+            </button>
+          ) : null}
+        </span>
       </div>
       {project ? <ProjectFileExplorer key={project.dir} api={api} projectDir={project.dir} /> : <div className="file-explorer-empty muted">Abra um projeto para navegar pelos arquivos.</div>}
       <div className="side-foot">

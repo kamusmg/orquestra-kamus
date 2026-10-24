@@ -28,6 +28,7 @@ import {
   type Result,
   type TerminalInfo,
   type Workspace,
+  type HostCommand,
 } from '@orquestra/shared';
 import {
   createOrquestra,
@@ -97,11 +98,11 @@ export type HostBridgeOptions = {
 };
 
 export type HostBridge = {
-  handle(message: Exclude<MainToHost, { kind: 'shutdown' }>): Promise<void>;
-  /** Só para testes: chama os comandos do orq como se viessem do pipe. */
+  handle(message: Exclude<MainToHost, { kind: 'shutdown' }> | HostCommand | string): Promise<unknown>;
   dispatchForTest(method: MethodName, params: unknown, caller: { session: string }): Promise<unknown>;
   close(): Promise<void>;
   cancelWork?(): Promise<void>;
+  unloadIdleTerminals?(): Promise<string[]>;
 };
 
 type OpenProject = { dir: string; name: string; state: WorkspaceState; saver: WorkspaceSaver; flow?: FlowEngine };
@@ -117,6 +118,10 @@ export type UsageState = {
 
 export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBridge> {
   let orquestra: Orquestra;
+  const orq = (): Orquestra => {
+    if (!orquestra) throw new OrqError('APP_UNAVAILABLE', 'Núcleo não inicializado.');
+    return orquestra;
+  };
   let project: OpenProject | null = null;
   let fileExplorer: { dir: string; files: ProjectFiles } | null = null;
   const batcher = new OutputBatcher(
@@ -295,7 +300,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       const resolvedPersona = params.persona ? resolvePersona(params.persona) : undefined;
       const authorRect = current.state.rectOf(caller) ?? { x: 80, y: 80, ...TERMINAL_SIZE };
       const rect = { ...placeBeside(authorRect, Object.values(current.state.layout()), TERMINAL_SIZE), ...TERMINAL_SIZE };
-      const effectiveCwd = params.floor ? floorDirectory(current.project.dir, params.floor) : params.cwd;
+      const effectiveCwd = params.floor ? floorDirectory(current.dir, params.floor) : params.cwd;
       const session = await createTerminalFor({
         name: params.name,
         agent: params.agent,
@@ -723,6 +728,16 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
     'terminal.update': async ({ name, ...changes }) => {
       opts.log.info({ terminal: name, method: 'terminal.update', keys: Object.keys(changes) }, 'comando da interface');
       const before = orquestra.describeTerminals().find((terminal) => terminal.name === name);
+      if (changes.agent === 'agy' && before?.agent !== 'agy') {
+        const result = await ensureAgyGlobalHook({
+          command: agyStopHookCommand(opts.cliScript),
+          confirm: requestConfirm,
+          ...(opts.agyHooksFile ? { hooksFile: opts.agyHooksFile } : {}),
+        });
+        if (result === 'declined') {
+          throw new OrqError('USAGE', 'Sem o hook global, o Orquestra não sabe quando o agy termina. O agente não foi trocado.');
+        }
+      }
       const session = await orquestra.updateTerminal(name, changes);
       if (changes.newName && changes.newName !== name) project?.state.rename(name, changes.newName);
       syncFlowAgents();
@@ -752,6 +767,12 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       const session = await orquestra.unloadTerminal(name);
       recordPids(); changed();
       return info(session);
+    },
+    'terminal.unloadIdle': async () => {
+      opts.log.info({ method: 'terminal.unloadIdle' }, 'comando da interface');
+      const unloaded = await orq().unloadIdleTerminals();
+      recordPids(); changed();
+      return { unloaded };
     },
     'terminal.presentation': async ({ name, ...changes }) => {
       const current = requireProject();
@@ -908,33 +929,104 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
     },
   };
 
-  return {
-    async handle(message) {
-      if (message.kind === 'portal-reply') {
-        const pending = portalCalls.get(message.id);
-        if (message.ok) pending?.resolve(message.result); else pending?.reject(new OrqError(message.error?.code ?? 'APP_UNAVAILABLE', message.error?.message ?? 'Navegador indisponível.'));
-        return;
-      }
-      if (message.kind === 'confirm-reply') {
-        confirms.get(message.id)?.(message.approved);
-        confirms.delete(message.id);
-        return;
-      }
+  async function handle(message: Exclude<MainToHost, { kind: 'shutdown' }> | HostCommand | string): Promise<unknown> {
+    if (typeof message === 'string') {
+      let parsed: unknown;
+      try { parsed = JSON.parse(message); } catch { throw new OrqError('USAGE', 'JSON inválido.'); }
+      return handle(parsed as Exclude<MainToHost, { kind: 'shutdown' }> | HostCommand);
+    }
+    if ('type' in (message as object)) {
+      const cmd = message as HostCommand;
       try {
-        if (!isHostMethod(message.method)) throw new OrqError('USAGE', `Comando desconhecido: ${message.method}.`);
-        const params = parseHostParams(message.method, message.params);
-        if (!(message.method in handlers)) throw new OrqError('USAGE', 'Comando de workspace requer o gerenciador.');
-        const result = await (handlers[message.method as BridgeMethod] as (p: unknown) => Promise<unknown>)(params);
-        opts.send({ kind: 'response', id: message.id, ok: true, result });
+        const result = await (async () => {
+          switch (cmd.type) {
+            case 'unload-idle-terminals': {
+              const unloaded = await orq().unloadIdleTerminals();
+              return { unloaded };
+            }
+            case 'ping-control':
+              return { pid: process.pid, rssBytes: process.memoryUsage().rss };
+            case 'list': {
+              return {
+                workspaces: project ? [{ id: 'default', dir: project.dir, name: project.name, status: 'open', terminalCount: orquestra.sessions().length, busy: orquestra.sessions().filter((s) => s.state === 'busy').length, waiting: orquestra.sessions().filter((s) => s.state === 'waiting').length }] : [],
+                selectedId: project ? 'default' : null,
+              };
+            }
+            case 'update-terminal': {
+              const changes = { ...(cmd.changes ?? {}), ...(cmd.agent ? { agent: cmd.agent } : {}) };
+              const session = await orq().updateTerminal(cmd.name, changes);
+              recordPids();
+              changed();
+              return info(session);
+            }
+            case 'unload-terminal': {
+              const session = await orq().unloadTerminal(cmd.name);
+              recordPids();
+              changed();
+              return info(session);
+            }
+            case 'restart-terminal': {
+              const session = await orq().restartTerminal(cmd.name);
+              recordPids();
+              changed();
+              return info(session);
+            }
+            case 'send-input': {
+              const session = requireSession(cmd.name);
+              session.userInput(cmd.data);
+              return {};
+            }
+            case 'read-output': {
+              const session = requireSession(cmd.name);
+              const screen = session.snapshot();
+              const lines = cmd.lines ?? 40;
+              const text = screen.data.split('\n').slice(-lines).join('\n');
+              return { text };
+            }
+            case 'shutdown': {
+              return { ok: true };
+            }
+          }
+        })();
+        return { id: cmd.id, ok: true, result };
       } catch (error) {
         if (error instanceof OrqError) {
-          opts.send({ kind: 'response-error', id: message.id, error: { code: error.code, message: error.message } });
-          return;
+          return { id: cmd.id, ok: false, error: { code: error.code, message: error.message } };
         }
-        opts.log.error({ err: error, method: message.method }, 'erro interno no comando');
-        opts.send({ kind: 'response-error', id: message.id, error: { code: 'INTERNAL', message: 'Erro interno do Orquestra. Veja o log.' } });
+        const messageStr = error instanceof Error ? error.message : 'Erro interno.';
+        return { id: cmd.id, ok: false, error: { code: 'INTERNAL', message: messageStr } };
       }
-    },
+    }
+    const main = message as Exclude<MainToHost, { kind: 'shutdown' }>;
+    if (main.kind === 'portal-reply') {
+      const pending = portalCalls.get(main.id);
+      if (main.ok) pending?.resolve(main.result); else pending?.reject(new OrqError(main.error?.code ?? 'APP_UNAVAILABLE', main.error?.message ?? 'Navegador indisponível.'));
+      return;
+    }
+    if (main.kind === 'confirm-reply') {
+      confirms.get(main.id)?.(main.approved);
+      confirms.delete(main.id);
+      return;
+    }
+    try {
+      if (!isHostMethod(main.method)) throw new OrqError('USAGE', `Comando desconhecido: ${main.method}.`);
+      const params = parseHostParams(main.method, main.params);
+      if (!(main.method in handlers)) throw new OrqError('USAGE', 'Comando de workspace requer o gerenciador.');
+      const result = await (handlers[main.method as BridgeMethod] as (p: unknown) => Promise<unknown>)(params);
+      opts.send({ kind: 'response', id: main.id, ok: true, result });
+    } catch (error) {
+      if (error instanceof OrqError) {
+        opts.send({ kind: 'response-error', id: main.id, error: { code: error.code, message: error.message } });
+        return;
+      }
+      opts.log.error({ err: error, method: main.method }, 'erro interno no comando');
+      opts.send({ kind: 'response-error', id: main.id, error: { code: 'INTERNAL', message: 'Erro interno do Orquestra. Veja o log.' } });
+    }
+  }
+
+  return {
+    handle,
+    unloadIdleTerminals: () => orq().unloadIdleTerminals(),
     dispatchForTest: (method, params, caller) => orquestra.dispatchForTest(method, params, caller, new AbortController().signal),
     cancelWork: async () => { await project?.flow?.cancel(); },
     async close() {

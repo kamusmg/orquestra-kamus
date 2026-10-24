@@ -26,6 +26,8 @@ describe('AboutDialog', () => {
     expect(screen.getByText('44.7.0')).toBeTruthy();
     expect(screen.getByText('144.0')).toBeTruthy();
     expect(screen.getByText('24.0.0')).toBeTruthy();
+    expect(screen.getByText(/Kamus Edition 🔺 — Otimizado para Windows 11 Desktop & Rust Engine/)).toBeTruthy();
+    expect(screen.getByText(/Criado originalmente por Fábio Peixoto \(engfabiopeixoto\/orquestra\)/)).toBeTruthy();
   });
 
   it('copia as informações do app e do sistema, uma por linha', async () => {

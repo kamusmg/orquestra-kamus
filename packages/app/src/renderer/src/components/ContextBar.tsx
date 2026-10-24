@@ -1,4 +1,4 @@
-import type { QueueEntry } from '@orquestra/shared/host-protocol';
+import type { QueueEntry, HostAgent as AgentKind } from '@orquestra/shared/host-protocol';
 import { useState } from 'react';
 import { createCommandApi } from '../api';
 import { appStore, useApp } from '../store';
@@ -16,9 +16,18 @@ async function run(action: () => Promise<void>) {
   }
 }
 
-export function ContextBar({ name, menu = false, onDone, onOpenMenu }: { name: string; menu?: boolean; onDone?(): void; onOpenMenu?(event: React.MouseEvent<HTMLButtonElement>): void }) {
+export interface ContextBarProps {
+  name: string;
+  menu?: boolean;
+  onDone?(): void;
+  onOpenMenu?(event: React.MouseEvent<HTMLButtonElement>): void;
+  onSwitchAgent?: (name: string, agent: AgentKind) => void;
+}
+
+export function ContextBar({ name, menu = false, onDone, onOpenMenu, onSwitchAgent }: ContextBarProps) {
   const queue = useApp((state) => state.queues[name] ?? NO_QUEUE);
   const view = useApp((state) => state.terminals[name]);
+  const singleTerminal = view;
   const [showQueue, setShowQueue] = useState(false);
   const [pending, setPending] = useState(false);
   const act = async (action: () => Promise<void>) => {
@@ -41,6 +50,20 @@ export function ContextBar({ name, menu = false, onDone, onOpenMenu }: { name: s
 
   return (
     <div className={menu ? 'ctx ctx-menu nodrag' : 'ctx nodrag'}>
+      {singleTerminal && onSwitchAgent ? (
+        <select
+          data-testid="context-quick-agent"
+          className="context-BarSelect"
+          title="Trocar agente deste terminal (Hot-Swap)"
+          value={singleTerminal.agent}
+          onChange={(e) => onSwitchAgent(singleTerminal.name, e.target.value as AgentKind)}
+        >
+          <option value="claude">claude</option>
+          <option value="agy">agy</option>
+          <option value="codex">codex</option>
+          <option value="shell">shell</option>
+        </select>
+      ) : null}
       <button role={menu ? 'menuitem' : undefined} disabled={pending} data-testid="ctx-edit" onClick={() => { appStore.getState().setEditing(name); onDone?.(); }}>Editar</button>
       <button role={menu ? 'menuitem' : undefined} data-testid="ctx-queue" onClick={() => setShowQueue(!showQueue)}>
         Fila{queue.length > 0 ? <span className="badge">{queue.length}</span> : null}

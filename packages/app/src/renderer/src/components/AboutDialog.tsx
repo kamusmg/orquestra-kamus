@@ -41,6 +41,9 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
           <div>
             <h2>Orquestra</h2>
             {info ? <p>Versão {info.version}</p> : <p className="muted">Carregando informações…</p>}
+            <p className="about-edition" style={{ color: '#f2a33a', margin: '4px 0 0', fontSize: '0.85rem' }}>
+              Kamus Edition 🔺 — Otimizado para Windows 11 Desktop &amp; Rust Engine
+            </p>
           </div>
         </div>
         {info ? (
@@ -50,6 +53,9 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
             <div><dt>Node</dt><dd>{info.node}</dd></div>
           </dl>
         ) : null}
+        <p className="about-credits" style={{ color: '#8b949e', margin: '8px 0 2px', fontSize: '0.8rem' }}>
+          Criado originalmente por Fábio Peixoto (engfabiopeixoto/orquestra)
+        </p>
         <p className="about-license">por engfabiopeixoto · licença MIT</p>
         {error ? <p className="dialog-error" role="alert">{error}</p> : null}
         <div className="dialog-actions">

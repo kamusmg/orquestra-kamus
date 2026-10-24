@@ -202,7 +202,16 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
   return (
     <>
       <NodeToolbar isVisible={selected && !menu} position={Position.Top} align="start">
-        <ContextBar name={data.name} onOpenMenu={openFromButton} />
+        <ContextBar
+          name={data.name}
+          onOpenMenu={openFromButton}
+          onSwitchAgent={(name, agent) => {
+            void api
+              .command('terminal.update', { name, agent })
+              .then((info) => appStore.getState().replaceTerminal(name, info))
+              .catch((err: Error) => appStore.getState().notify('error', err.message));
+          }}
+        />
       </NodeToolbar>
       <NodeResizer
         isVisible={selected && !view.locked}

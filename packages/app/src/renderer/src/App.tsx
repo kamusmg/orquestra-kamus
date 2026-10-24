@@ -1,4 +1,5 @@
 import { emptySettings, type Settings } from '@orquestra/shared/args';
+import type { HostCommand } from '@orquestra/shared/host-protocol';
 import { ReactFlowProvider } from '@xyflow/react';
 import { useEffect, useMemo, useState } from 'react';
 import { createCommandApi } from './api';
@@ -64,6 +65,36 @@ export function App() {
       for (const portal of portals) if (!portalStore.getState().portals[portal.id]) portalStore.getState().setPortal({ id: portal.id, workspaceId: project.workspaceId!, activeTabId: 'tab-1', tabs: [{ id: 'tab-1', url: 'about:blank', title: portal.title, isLoading: false, canGoBack: false, canGoForward: false }], mode: 'desktop', presetId: 'desktop-compact', orientation: 'portrait', zoomLevel: 1, isAttached: false, visible: false });
     }).catch(() => {});
   }, [project?.workspaceId]);
+
+  const handleUnloadIdle = () => {
+    try {
+      const sendFn = (window.orquestra as unknown as { send?: (c: unknown) => void }).send;
+      if (sendFn) {
+        sendFn({ type: 'unload-idle-terminals' } as unknown as HostCommand);
+      }
+      void api.command('terminal.unloadIdle', {}).then((res) => {
+        for (const name of (res as { unloaded?: string[] }).unloaded ?? []) {
+          const current = appStore.getState().terminals[name];
+          if (current) {
+            appStore.getState().replaceTerminal(name, { ...current, state: 'exited', unloaded: true });
+          }
+        }
+      }).catch(() => {});
+    } catch (error) {
+      appStore.getState().notify('error', (error as Error).message);
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && (event.key === 'U' || event.key === 'u')) {
+        event.preventDefault();
+        handleUnloadIdle();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const openNewTerminal = async (groupId?: string) => {
     setCreatingGroup(groupId);
@@ -164,7 +195,7 @@ export function App() {
         newNote: (id) => void createNote(id),
       }}>
         <div className="app">
-          <Sidebar onOpenSettings={() => setSettingsOpen(true)} onOpenPersonas={() => setPersonasOpen(true)} />
+          <Sidebar onOpenSettings={() => setSettingsOpen(true)} onOpenPersonas={() => setPersonasOpen(true)} onUnloadIdle={handleUnloadIdle} />
           <div className="workspace-main">
           <div className="titlebar" />
           <main className="canvas">

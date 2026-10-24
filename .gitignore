@@ -18,3 +18,5 @@ coverage/
 Thumbs.db
 .orquestra/
 graphify-out/
+target/
+

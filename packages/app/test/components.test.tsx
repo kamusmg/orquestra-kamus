@@ -105,4 +105,17 @@ describe('ContextBar', () => {
     fireEvent.click(screen.getByTestId('ctx-edit'));
     expect(appStore.getState().editing).toBe('A');
   });
+
+  it('renderiza o select de hot-swap rápido quando onSwitchAgent é fornecido e dispara a troca', async () => {
+    Object.assign(window, { orquestra: { invoke: vi.fn(), reportError: vi.fn() } });
+    const { ContextBar } = await import('../src/renderer/src/components/ContextBar');
+    const { appStore } = await import('../src/renderer/src/store');
+    appStore.getState().addTerminal({ name: 'A', agent: 'claude', state: 'idle', queued: 0, cwd: 'C:/p', resume: true, args: [], regente: false, monitor: false });
+    const onSwitchAgent = vi.fn();
+    render(<ContextBar name="A" onSwitchAgent={onSwitchAgent} />);
+    const select = screen.getByTestId('context-quick-agent');
+    expect((select as HTMLSelectElement).value).toBe('claude');
+    fireEvent.change(select, { target: { value: 'agy' } });
+    expect(onSwitchAgent).toHaveBeenCalledWith('A', 'agy');
+  });
 });

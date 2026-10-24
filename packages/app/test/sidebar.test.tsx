@@ -131,11 +131,39 @@ describe('Sidebar: workspaces', () => {
     expect(screen.queryByTestId('recent-alfa')).toBeNull();
   });
 
-  it('mostra o contador n/3 ao lado de PROJETOS', async () => {
+  it('mostra o contador n/10 ao lado de PROJETOS e desabilita no limite', async () => {
     workspaceStore.setState({ workspaces: [info({ id: 'w1' }), info({ id: 'w2', dir: 'C:\\proj\\beta', name: 'beta' })], selectedId: 'w1' });
     renderSidebar();
-    const count = await screen.findByTitle('Máximo de três workspaces simultâneos');
-    expect(count.textContent).toBe('2/3');
+    const count = await screen.findByTitle('Máximo de dez workspaces simultâneos');
+    expect(count.textContent).toBe('2/10');
+    expect((screen.getByTestId('open-project') as HTMLButtonElement).disabled).toBe(false);
+
+    const ten = Array.from({ length: 10 }, (_, i) => info({ id: `w${i}` }));
+    workspaceStore.setState({ workspaces: ten, selectedId: 'w0' });
+    await waitFor(() => expect((screen.getByTestId('open-project') as HTMLButtonElement).disabled).toBe(true));
+  });
+
+  it('aciona onUnloadIdle ao clicar em Liberar RAM quando há terminal idle', async () => {
+    const onUnloadIdle = vi.fn();
+    const { api } = fakeApi();
+    appStore.getState().addTerminal({
+      name: 'idle-term',
+      agent: 'shell',
+      state: 'idle',
+      queued: 0,
+      cwd: 'C:\\proj',
+      resume: true,
+      args: [],
+      regente: false,
+      monitor: false,
+      unloaded: false,
+    });
+    render(<Sidebar api={api} onOpenSettings={() => {}} onOpenPersonas={() => {}} onUnloadIdle={onUnloadIdle} />);
+    const unloadBtn = await screen.findByTestId('sidebar-unload-idle');
+    expect(unloadBtn).toBeTruthy();
+    expect(unloadBtn.textContent).toBe('Liberar RAM');
+    fireEvent.click(unloadBtn);
+    expect(onUnloadIdle).toHaveBeenCalledTimes(1);
   });
 
   it('lista no topo o workspace aberto que não está nos recentes', async () => {
