@@ -31,6 +31,7 @@ export function resolveAdb(): string {
     return process.env.ADB_PATH;
   }
   const candidates = [
+    join('D:', 'projetos D', 'cyberdeck', 'ferramentas', 'scrcpy-win64-v5.0.1', 'adb.exe'),
     join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Android', 'Sdk', 'platform-tools', 'adb.exe'),
     join(process.env.ProgramFiles ?? 'C:/Program Files', 'Android', 'platform-tools', 'adb.exe'),
     'C:/Program Files/Nox/bin/nox_adb.exe',
