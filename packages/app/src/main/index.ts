@@ -140,8 +140,23 @@ function createWindow(): BrowserWindow {
     portalSystem?.dispose();
     void (host?.stop() ?? Promise.resolve()).finally(() => app.quit());
   });
+  const rendererFile = join(__dirname, '../renderer/index.html');
+  log.info({ rendererFile, isPackaged: app.isPackaged }, 'carregando interface renderer');
+  created.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    log.error({ errorCode, errorDescription, validatedURL }, 'falha ao carregar a página do renderer');
+  });
+  created.webContents.on('render-process-gone', (_event, details) => {
+    log.error({ details }, 'processo do renderer encerrou inesperadamente');
+  });
+  created.once('ready-to-show', () => {
+    log.info('janela pronta para exibição (ready-to-show)');
+    created.show();
+    created.focus();
+  });
   if (process.env.ELECTRON_RENDERER_URL) void created.loadURL(process.env.ELECTRON_RENDERER_URL);
-  else void created.loadFile(join(__dirname, '../renderer/index.html'));
+  else void created.loadFile(rendererFile);
+  created.show();
+  created.focus();
   return created;
 }
 
@@ -246,7 +261,9 @@ if (!app.requestSingleInstanceLock()) {
       register: async (workspaceId, id) => { if (!host) throw new OrqError('APP_UNAVAILABLE', 'Núcleo indisponível.'); await host.request('portal.register', { id, title: 'Navegador' }, workspaceId); },
       unregister: async (workspaceId, id) => { if (host) await host.request('portal.unregister', { id }, workspaceId); },
     });
+    log.info('app.whenReady: chamando createWindow()');
     window = createWindow();
+    log.info('app.whenReady: createWindow() retornado');
   });
   app.on('before-quit', () => {
     portalSystem?.dispose();
