@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { defaultMonitor, OrqError, reservedArgError, terminalNameSchema, type AgentKind, type QueueEntry, type SessionState } from '@orquestra/shared';
+import { defaultMonitor, noteNameSchema, OrqError, reservedArgError, terminalNameSchema, type AgentKind, type QueueEntry, type SessionState } from '@orquestra/shared';
 import type { AgentAdapter } from './adapters/types.js';
 import { AskBroker } from './ask-broker.js';
 import { CLAUDE_CLEAR_INPUT, ClaudeStatusWatcher } from './adapters/claude-status.js';
@@ -526,8 +526,8 @@ export async function createOrquestra(opts: OrquestraOptions): Promise<Orquestra
       }
     },
     renameNote: (name, newName) => {
-      const parsed = terminalNameSchema.safeParse(newName);
-      if (!parsed.success) throw new OrqError('USAGE', `Nome inválido: ${parsed.error.issues[0]?.message ?? 'use letras, números, ponto, hífen ou sublinhado.'}`);
+      const parsed = noteNameSchema.safeParse(newName);
+      if (!parsed.success) throw new OrqError('USAGE', `Nome inválido: ${parsed.error.issues[0]?.message ?? 'use letras, números, ponto, hífen, sublinhado ou espaço.'}`);
       if (name === newName) {
         const current = notes.get(name);
         if (!current) throw new OrqError('NOT_FOUND', `A nota ${name} não existe.`);

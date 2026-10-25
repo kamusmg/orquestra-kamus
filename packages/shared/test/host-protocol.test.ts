@@ -7,6 +7,7 @@ import {
   parseHostParams,
   parseHostResult,
   terminalNameSchema,
+  noteNameSchema,
 } from '../src/index.js';
 
 describe('terminalNameSchema', () => {
@@ -19,11 +20,52 @@ describe('terminalNameSchema', () => {
   });
 });
 
+describe('noteNameSchema', () => {
+  it('aceita letras com acento, números, ponto, hífen, sublinhado e espaços', () => {
+    for (const name of [
+      'Quadro de Progresso - Tech Lead',
+      'Regra Zero',
+      'nota-1',
+      'Contexto Vivo - Sessão Argon',
+      'a.b_c',
+    ]) {
+      expect(noteNameSchema.safeParse(name).success).toBe(true);
+    }
+  });
+
+  it('recusa vazio e nomes maiores que 80 caracteres', () => {
+    expect(noteNameSchema.safeParse('').success).toBe(false);
+    expect(noteNameSchema.safeParse('x'.repeat(81)).success).toBe(false);
+  });
+});
+
 describe('métodos do núcleo', () => {
   it('valida os parâmetros de terminal.create e recusa agente desconhecido', () => {
     expect(parseHostParams('terminal.create', { name: 'A', agent: 'shell' })).toEqual({ name: 'A', agent: 'shell' });
     expect(parseHostParams('terminal.create', { name: 'A', agent: 'codex' })).toEqual({ name: 'A', agent: 'codex' });
     expect(() => parseHostParams('terminal.create', { name: 'A', agent: 'unknown' })).toThrow(expect.objectContaining({ code: 'USAGE' }));
+  });
+
+  it('valida os parâmetros de note.create e note.rename permitindo espaços no nome', () => {
+    expect(
+      parseHostParams('note.create', {
+        name: 'Quadro de Progresso - Tech Lead',
+        content: '# Teste',
+      }),
+    ).toEqual({
+      name: 'Quadro de Progresso - Tech Lead',
+      content: '# Teste',
+    });
+
+    expect(
+      parseHostParams('note.rename', {
+        name: 'nota-1',
+        newName: 'Regra Zero - Segurança e Git',
+      }),
+    ).toEqual({
+      name: 'nota-1',
+      newName: 'Regra Zero - Segurança e Git',
+    });
   });
 
   it('valida o resultado do retrato', () => {

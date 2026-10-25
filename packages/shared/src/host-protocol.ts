@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import { settingsSchema } from './args.js';
 import { errorCodeSchema, OrqError } from './errors.js';
-import { terminalNameSchema } from './names.js';
+import { terminalNameSchema, noteNameSchema } from './names.js';
 import { sessionStateSchema } from './protocol.js';
 import { personaScopeSchema } from './regent.js';
 import { canvasGroupSchema, groupColorSchema, groupKindSchema, groupMemberSchema, positionSchema, sizeSchema, viewportSchema } from './workspace.js';
 import { flowGraphSchema, flowNodeSchema, flowRunSchema, flowNodeResultSchema, flowSnapshotSchema, flowTestReportSchema, jsonValueSchema } from './flow.js';
 import { browserNodeSchema, browserMethodSchemas } from './browser.js';
 
-export { terminalNameSchema } from './names.js';
+export { terminalNameSchema, noteNameSchema } from './names.js';
 
 export const rectSchema = positionSchema.merge(sizeSchema);
 
@@ -289,10 +289,10 @@ export const hostMethodSchemas = {
     result: empty,
   },
   'note.create': {
-    params: z.object({ name: terminalNameSchema, content: z.string().default(''), rect: rectSchema.optional(), groupId: z.string().uuid().optional() }),
+    params: z.object({ name: noteNameSchema, content: z.string().default(''), rect: rectSchema.optional(), groupId: z.string().uuid().optional() }),
     result: noteInfoSchema,
   },
-  'note.rename': { params: z.object({ name: z.string().min(1), newName: terminalNameSchema }), result: noteInfoSchema },
+  'note.rename': { params: z.object({ name: z.string().min(1), newName: noteNameSchema }), result: noteInfoSchema },
   'note.save': {
     // baseRevision: revisão em que a edição começou; null sobrescreve.
     params: z.object({ name: z.string().min(1), content: z.string(), baseRevision: z.number().int().nullable() }),

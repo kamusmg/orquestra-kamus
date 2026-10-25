@@ -255,7 +255,25 @@ export function App() {
           height: note.size?.height ?? 180,
         });
       } catch (err) {
-        console.error(`Erro ao criar nota ${finalName}:`, err);
+        console.warn(`Tentativa de criar nota "${finalName}" falhou, aplicando fallback com hífen...`, err);
+        const fallbackName = getUniqueName(finalName.replace(/\s+/g, '-'));
+        try {
+          const createdNote = await api.command('note.create', {
+            name: fallbackName,
+            content: note.content ?? '',
+          });
+          disambiguation.set(note.name, fallbackName);
+          appStore.getState().upsertNote(createdNote);
+          layoutNodes.push({
+            name: fallbackName,
+            x,
+            y,
+            width: note.size?.width ?? 280,
+            height: note.size?.height ?? 180,
+          });
+        } catch (fallbackErr) {
+          console.error(`Erro ao criar nota ${finalName} (fallback: ${fallbackName}):`, fallbackErr);
+        }
       }
     }
 
