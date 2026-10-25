@@ -10,9 +10,13 @@ use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
 pub const CREATE_NO_WINDOW: u32 = 0x08000000;
+#[cfg(windows)]
+pub const DETACHED_PROCESS: u32 = 0x00000008;
 
 #[cfg(not(windows))]
 pub const CREATE_NO_WINDOW: u32 = 0;
+#[cfg(not(windows))]
+pub const DETACHED_PROCESS: u32 = 0;
 
 /// Retorna um Command configurado para nunca exibir janela no Windows
 pub fn create_hidden_command(program: &str) -> Command {
@@ -154,6 +158,22 @@ pub enum Commands {
 
     /// Envia shutdown para o Host encerrando todos os processos com segurança
     Stop,
+
+    /// Reinicia o Orquestra silenciosamente (zero janelas CMD/foco roubado) e retoma a conversa automaticamente
+    Restart {
+        /// Terminal que deve receber o prompt automático de continuação após o restart (ex: argon-tech-lead)
+        #[arg(long)]
+        resume_terminal: Option<String>,
+        /// Mensagem enviada automaticamente ao terminal para retomar a conversa
+        #[arg(
+            long,
+            default_value = "Auto-restart concluído com sucesso! Continue exatamente de onde parou."
+        )]
+        resume_prompt: String,
+        /// Flag interna para o processo worker desacoplado
+        #[arg(long, hide = true)]
+        worker: bool,
+    },
 }
 
 /// Retorna o caminho padrão do Named Pipe no Windows
@@ -532,7 +552,7 @@ pub fn kill_electron_gui() -> Result<u64, String> {
 }
 
 /// Inicia a interface gráfica Electron (Orquestra.exe)
-pub fn launch_gui() -> Result<(), String> {
+pub fn launch_gui_with_opts(no_focus: bool) -> Result<(), String> {
     let default_path = r"D:\projetos D\orquestra\packages\app\release\win-unpacked\Orquestra.exe";
     let exe_path = std::env::var("ORQ_GUI_PATH").unwrap_or_else(|_| default_path.to_string());
 
@@ -543,6 +563,9 @@ pub fn launch_gui() -> Result<(), String> {
     }
 
     let mut cmd = Command::new(&exe_path);
+    if no_focus {
+        cmd.env("ORQ_NO_FOCUS", "1");
+    }
     #[cfg(windows)]
     {
         cmd.creation_flags(CREATE_NO_WINDOW);
@@ -551,6 +574,10 @@ pub fn launch_gui() -> Result<(), String> {
         .map_err(|e| format!("Falha ao iniciar {exe_path}: {e}"))?;
 
     Ok(())
+}
+
+pub fn launch_gui() -> Result<(), String> {
+    launch_gui_with_opts(false)
 }
 
 fn main() {
@@ -924,6 +951,73 @@ fn main() {
                 Err(e) => {
                     eprintln!("❌ Falha ao enviar desligamento ao Host: {e}");
                     std::process::exit(1);
+                }
+            }
+        }
+
+        Commands::Restart {
+            resume_terminal,
+            resume_prompt,
+            worker,
+        } => {
+            if !worker {
+                let current_exe = std::env::current_exe()
+                    .unwrap_or_else(|_| std::path::PathBuf::from("orq-pc.exe"));
+                let mut cmd = Command::new(current_exe);
+                cmd.arg("--pipe").arg(&pipe_path);
+                if let Some(w) = ws {
+                    cmd.arg("--workspace").arg(w);
+                }
+                cmd.arg("restart").arg("--worker");
+                if let Some(ref term) = resume_terminal {
+                    cmd.arg("--resume-terminal").arg(term);
+                }
+                cmd.arg("--resume-prompt").arg(&resume_prompt);
+                #[cfg(windows)]
+                {
+                    cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+                }
+                match cmd.spawn() {
+                    Ok(_) => {
+                        println!(
+                            "🔄 Auto-restart silencioso agendado (zero janelas CMD / sem roubar foco). Retomando conversa em instantes..."
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Falha ao iniciar worker de restart: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+                let _ = send_host_command(&pipe_path, &build_shutdown_payload());
+                std::thread::sleep(std::time::Duration::from_millis(1200));
+                let _ = create_hidden_command("taskkill")
+                    .args(["/IM", "Orquestra.exe", "/F"])
+                    .status();
+                std::thread::sleep(std::time::Duration::from_millis(800));
+
+                let asar_new = r"D:\projetos D\orquestra\packages\app\release\win-unpacked\resources\app.asar.new";
+                let asar_target = r"D:\projetos D\orquestra\packages\app\release\win-unpacked\resources\app.asar";
+                if std::path::Path::new(asar_new).exists() {
+                    let _ = std::fs::rename(asar_new, asar_target);
+                }
+
+                let _ = launch_gui_with_opts(true);
+
+                // Aguarda o Host responder ao ping (até 25s)
+                for _ in 0..50 {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    if send_host_command(&pipe_path, &build_ping_payload()).is_ok() {
+                        break;
+                    }
+                }
+
+                // Se foi solicitado retomar conversa em um terminal, aguarda a TUI estabilizar e envia o prompt
+                if let Some(term) = resume_terminal {
+                    std::thread::sleep(std::time::Duration::from_millis(5500));
+                    let prompt_payload = build_prompt_payload(&term, &resume_prompt, ws);
+                    let _ = send_host_command(&pipe_path, &prompt_payload);
                 }
             }
         }

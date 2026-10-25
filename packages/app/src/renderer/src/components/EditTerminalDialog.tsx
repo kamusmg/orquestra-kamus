@@ -26,7 +26,7 @@ const parseArgsSafe = (text: string): string[] => {
 export function EditTerminalDialog({ name, api, onClose }: { name: string; api: CommandApi; onClose(): void }) {
   const view = useApp((state) => state.terminals[name]);
   const [newName, setNewName] = useState(name);
-  const [agent, setAgent] = useState<AgentKind>(view?.agent ?? 'claude');
+  const [agent, setAgent] = useState<AgentKind>((view?.agent as AgentKind) ?? 'claude');
   const [cwd, setCwd] = useState(view?.cwd ?? '');
   const [argsText, setArgsText] = useState(formatArgs(view?.args ?? []));
   const [persona, setPersona] = useState<string>(view?.persona ?? '');

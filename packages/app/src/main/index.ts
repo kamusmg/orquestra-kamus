@@ -149,15 +149,24 @@ function createWindow(): BrowserWindow {
   created.webContents.on('render-process-gone', (_event, details) => {
     log.error({ details }, 'processo do renderer encerrou inesperadamente');
   });
+  const noFocus = process.env.ORQ_NO_FOCUS === '1';
   created.once('ready-to-show', () => {
-    log.info('janela pronta para exibição (ready-to-show)');
-    created.show();
-    created.focus();
+    log.info({ noFocus }, 'janela pronta para exibição (ready-to-show)');
+    if (noFocus) {
+      created.showInactive();
+    } else {
+      created.show();
+      created.focus();
+    }
   });
   if (process.env.ELECTRON_RENDERER_URL) void created.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void created.loadFile(rendererFile);
-  created.show();
-  created.focus();
+  if (noFocus) {
+    created.showInactive();
+  } else {
+    created.show();
+    created.focus();
+  }
   return created;
 }
 

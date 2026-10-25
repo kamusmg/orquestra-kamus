@@ -129,10 +129,18 @@ let lastModelFetch = 0;
 
 export const FALLBACK_AGY_MODELS: ModelEntry[] = [
   { id: 'gemini-4-argon-high', label: 'Gemini 4 Argon (High)', agent: 'agy' },
+  { id: 'gemini-4-argon-medium', label: 'Gemini 4 Argon (Medium)', agent: 'agy' },
+  { id: 'gemini-4-argon-low', label: 'Gemini 4 Argon (Low)', agent: 'agy' },
   { id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)', agent: 'agy' },
   { id: 'gemini-3.8-flash-medium', label: 'Gemini 3.8 Flash (Medium)', agent: 'agy' },
+  { id: 'gemini-3.8-flash-low', label: 'Gemini 3.8 Flash (Low)', agent: 'agy' },
   { id: 'claude-opus-5-5-high', label: 'Claude Opus 5.5 (High)', agent: 'agy' },
+  { id: 'claude-opus-5-5-medium', label: 'Claude Opus 5.5 (Medium)', agent: 'agy' },
+  { id: 'claude-opus-5-5-low', label: 'Claude Opus 5.5 (Low)', agent: 'agy' },
   { id: 'claude-sonnet-5-5-high', label: 'Claude Sonnet 5.5 (High)', agent: 'agy' },
+  { id: 'claude-sonnet-5-5-medium', label: 'Claude Sonnet 5.5 (Medium)', agent: 'agy' },
+  { id: 'claude-sonnet-5-5-low', label: 'Claude Sonnet 5.5 (Low)', agent: 'agy' },
+  { id: 'gpt-oss-120b-medium', label: 'GPT-OSS 120B (Medium)', agent: 'agy' },
 ];
 
 export const CLAUDE_NATIVE_MODELS: ModelEntry[] = [
@@ -158,28 +166,33 @@ export async function discoverModels(refresh = false): Promise<ModelListResult> 
   }
 
   let agyModels: ModelEntry[] = [];
-  try {
-    const resolved = resolveExecutable('agy');
-    const { stdout } = await execFileAsync(resolved.file, [...resolved.argsPrefix, 'models'], {
-      timeout: 8000,
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    const lines = stdout.split(/\r?\n/);
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('Fetching')) continue;
-      const tabIndex = trimmed.indexOf('\t');
-      if (tabIndex !== -1) {
-        const id = trimmed.slice(0, tabIndex).trim();
-        const label = trimmed.slice(tabIndex + 1).trim();
-        if (id && label) {
-          agyModels.push({ id, label, agent: 'agy' });
+  // Assim como em SubscriptionUsage, invocar `agy` fora do ConPTY aciona o auto-updater interno dele,
+  // que pisca uma janela de console de 1s no Windows (roubando foco de jogos em tela cheia).
+  // Só executamos `agy models` se refresh=true e ORQ_ALLOW_LIVE_AGY_MODELS=1 estiverem ativos.
+  if (refresh && process.env.ORQ_ALLOW_LIVE_AGY_MODELS === '1') {
+    try {
+      const resolved = resolveExecutable('agy');
+      const { stdout } = await execFileAsync(resolved.file, [...resolved.argsPrefix, 'models'], {
+        timeout: 8000,
+        windowsHide: true,
+        encoding: 'utf8',
+      });
+      const lines = stdout.split(/\r?\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('Fetching')) continue;
+        const tabIndex = trimmed.indexOf('\t');
+        if (tabIndex !== -1) {
+          const id = trimmed.slice(0, tabIndex).trim();
+          const label = trimmed.slice(tabIndex + 1).trim();
+          if (id && label) {
+            agyModels.push({ id, label, agent: 'agy' });
+          }
         }
       }
+    } catch {
+      agyModels = [];
     }
-  } catch {
-    agyModels = [];
   }
 
   if (agyModels.length === 0) {

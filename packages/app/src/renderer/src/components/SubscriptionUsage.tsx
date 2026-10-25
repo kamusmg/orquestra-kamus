@@ -43,7 +43,10 @@ function ProviderUsage({ id, title, automatic, api, onUsage }: { id: Provider; t
     mounted.current = true;
     if (!automatic) return () => { mounted.current = false; };
     void refresh();
-    const timer = setInterval(() => void refresh(), id === 'claude' ? 300000 : 60000);
+    // Só fazemos polling periódico para 'claude' (fetch HTTP puro sem criar processos no Windows).
+    // O 'codex' spawna `cmd.exe /c codex.cmd app-server`, que pode piscar janela de console a cada 60s.
+    if (id !== 'claude') return () => { mounted.current = false; };
+    const timer = setInterval(() => void refresh(), 300000);
     return () => { mounted.current = false; clearInterval(timer); };
   }, [api, id, automatic]);
   return <section className="usage-provider-section" aria-label={`Assinatura ${title}`}>
