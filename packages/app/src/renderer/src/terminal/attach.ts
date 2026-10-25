@@ -43,7 +43,10 @@ export async function attachTerminal(deps: {
   };
 }
 
-/** Executa attachTerminal protegendo contra falso erro se o nó for desmontado antes do término. */
+/**
+ * Executa attachTerminal protegendo contra falso erro se o nó for desmontado antes do término
+ * ou se estiver em processo de remoção/recriação rápida (orq remove / orq new).
+ */
 export function runAttachTerminal(deps: {
   name: string;
   term: TermLike;
@@ -52,16 +55,59 @@ export function runAttachTerminal(deps: {
   bus: OutputBus;
   onError: (message: string) => void;
   outputName?: string;
+  isStillActive?: () => boolean;
+  retryDelayMs?: number;
 }): () => void {
   let detach: (() => void) | undefined;
   let disposed = false;
-  void attachTerminal({ name: deps.name, term: deps.term, fit: deps.fit, api: deps.api, bus: deps.bus, outputName: deps.outputName ?? outputKey(deps.name) })
-    .then((cleanup) => (disposed ? cleanup() : (detach = cleanup)))
-    .catch((error: Error) => {
-      if (!disposed) deps.onError(`Não foi possível mostrar ${deps.name}: ${error.message}`);
-    });
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const isStillActive = deps.isStillActive ?? (() => true);
+
+  const attempt = (retryCount: number) => {
+    void attachTerminal({
+      name: deps.name,
+      term: deps.term,
+      fit: deps.fit,
+      api: deps.api,
+      bus: deps.bus,
+      outputName: deps.outputName ?? outputKey(deps.name),
+    })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+        } else {
+          detach = cleanup;
+        }
+      })
+      .catch((error: Error) => {
+        if (disposed) return;
+
+        // Se o terminal não existe mais no store, a remoção ocorreu: suprime o toast falso
+        if (!isStillActive()) return;
+
+        // Se for a primeira falha, pode ser recriação rápida (orq remove; orq new)
+        // Aguarda retryDelayMs (padrão 250ms) antes de reportar erro
+        if (retryCount === 0) {
+          retryTimer = setTimeout(() => {
+            if (disposed || !isStillActive()) return;
+            attempt(1);
+          }, deps.retryDelayMs ?? 250);
+          return;
+        }
+
+        // Falha persistente após retry em terminal ainda ativo
+        if (!disposed && isStillActive()) {
+          deps.onError(`Não foi possível mostrar ${deps.name}: ${error.message}`);
+        }
+      });
+  };
+
+  attempt(0);
+
   return () => {
     disposed = true;
+    if (retryTimer) clearTimeout(retryTimer);
     detach?.();
   };
 }

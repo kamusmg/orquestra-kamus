@@ -116,4 +116,79 @@ describe('attachTerminal', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(onError).not.toHaveBeenCalled();
   });
+
+  it('se isStillActive retornar false na falha do attach, suprime o aviso de erro falso imediatamente', async () => {
+    const api: CommandApi = {
+      command: (async () => {
+        throw new Error('terminal não encontrado');
+      }) as CommandApi['command'],
+    };
+    const bus = new OutputBus();
+    const term = fakeTerm();
+    const onError = vi.fn();
+    runAttachTerminal({
+      name: 'A',
+      term,
+      fit: () => {},
+      api,
+      bus,
+      onError,
+      isStillActive: () => false,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('reconecta silenciosamente se o terminal for recriado no retry em até 250ms', async () => {
+    let attempts = 0;
+    const api: CommandApi = {
+      command: (async (method: string) => {
+        if (method === 'terminal.snapshot') {
+          attempts++;
+          if (attempts === 1) throw new Error('removido');
+          return { data: 'NOVO_RETRATO', cols: 100, rows: 30 };
+        }
+        return {};
+      }) as CommandApi['command'],
+    };
+    const bus = new OutputBus();
+    const term = fakeTerm();
+    const onError = vi.fn();
+    runAttachTerminal({
+      name: 'A',
+      term,
+      fit: () => {},
+      api,
+      bus,
+      onError,
+      retryDelayMs: 20,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(attempts).toBe(2);
+    expect(onError).not.toHaveBeenCalled();
+    expect(term.writes).toContain('NOVO_RETRATO');
+  });
+
+  it('chama onError após o retry se o terminal continuar falhando e ainda estiver ativo', async () => {
+    const api: CommandApi = {
+      command: (async () => {
+        throw new Error('falha crítica');
+      }) as CommandApi['command'],
+    };
+    const bus = new OutputBus();
+    const term = fakeTerm();
+    const onError = vi.fn();
+    runAttachTerminal({
+      name: 'A',
+      term,
+      fit: () => {},
+      api,
+      bus,
+      onError,
+      retryDelayMs: 20,
+      isStillActive: () => true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('Não foi possível mostrar A: falha crítica'));
+  });
 });

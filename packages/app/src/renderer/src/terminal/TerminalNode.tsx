@@ -222,6 +222,7 @@ function TerminalBody({
       api,
       bus: outputBus,
       onError: (message) => appStore.getState().notify('error', message),
+      isStillActive: () => Boolean(appStore.getState().terminals[name]),
     });
 
     let timer: ReturnType<typeof setTimeout> | undefined;
