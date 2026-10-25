@@ -14,6 +14,7 @@ import {
   getCleanProgressBoardTemplate,
   getCleanLiveContextTemplate,
   prepareScoreNotesForApplication,
+  normalizeScoreNodeName,
   type ScoreDefinition,
 } from '../src/renderer/src/partituras';
 
@@ -438,7 +439,6 @@ describe('Partituras Note Templates & Classification', () => {
   });
 
   it('normalizeScoreNodeName normaliza acentos, travessões unicode e múltiplos espaços', () => {
-    const { normalizeScoreNodeName } = require('../src/renderer/src/partituras');
     expect(normalizeScoreNodeName('Quadro de Progresso — Tech Lead')).toBe('quadro de progresso tech lead');
     expect(normalizeScoreNodeName('Quadro de Progresso - Tech Lead')).toBe('quadro de progresso tech lead');
     expect(normalizeScoreNodeName('Regra Zero - Segurança e Git')).toBe('regra zero seguranca e git');
