@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { release as osRelease } from 'node:os';
@@ -234,6 +235,35 @@ ipcMain.handle('orq:pick-folder', async () => {
   return result.canceled ? null : (result.filePaths[0] ?? null);
 });
 
+async function saveWindowsClipboardImage(destPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const escapedDest = destPath.replace(/\\/g, '\\\\').replace(/'/g, "''");
+    const script = `
+Add-Type -AssemblyName System.Windows.Forms;
+Add-Type -AssemblyName System.Drawing;
+if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
+  $img = [System.Windows.Forms.Clipboard]::GetImage();
+  if ($img) {
+    $img.Save('${escapedDest}', [System.Drawing.Imaging.ImageFormat]::Png);
+    $img.Dispose();
+    [Console]::WriteLine('OK');
+  }
+}
+`.trim();
+
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      windowsHide: true,
+      timeout: 3000,
+    }, (err, stdout) => {
+      if (err || !stdout.includes('OK')) {
+        resolve(false);
+      } else {
+        resolve(true);
+      }
+    });
+  });
+}
+
 async function getClipboardImageBuffer(): Promise<Buffer | null> {
   const legacyClip = clipboard as unknown as { readImage?: () => Electron.NativeImage };
   if (typeof legacyClip.readImage === 'function') {
@@ -268,33 +298,40 @@ async function getClipboardImageBuffer(): Promise<Buffer | null> {
   return null;
 }
 
-async function saveClipboardPng(buffer: Buffer): Promise<string> {
+async function readAndSaveClipboardImage(): Promise<string | null> {
   const clipDir = join(dataDir, 'clipboard');
   await mkdir(clipDir, { recursive: true });
   const filePath = join(clipDir, `clip-${Date.now()}.png`);
-  await writeFile(filePath, buffer);
-  return filePath;
+
+  const buf = await getClipboardImageBuffer();
+  if (buf && buf.length > 0) {
+    await writeFile(filePath, buf);
+    return filePath;
+  }
+
+  if (process.platform === 'win32') {
+    const saved = await saveWindowsClipboardImage(filePath);
+    if (saved) return filePath;
+  }
+
+  return null;
 }
 
 ipcMain.handle('orq:clipboard-read', async () => {
   const text = await clipboard.readText();
   if (text && text.trim().length > 0) return text;
-  const imageBuf = await getClipboardImageBuffer();
-  if (imageBuf) {
-    try {
-      return await saveClipboardPng(imageBuf);
-    } catch (err) {
-      log.error({ err }, 'falha ao salvar imagem da área de transferência');
-    }
+  try {
+    const imagePath = await readAndSaveClipboardImage();
+    if (imagePath) return imagePath;
+  } catch (err) {
+    log.error({ err }, 'falha ao salvar imagem da área de transferência');
   }
   return text;
 });
 
 ipcMain.handle('orq:clipboard-read-image', async (): Promise<string | null> => {
-  const imageBuf = await getClipboardImageBuffer();
-  if (!imageBuf) return null;
   try {
-    return await saveClipboardPng(imageBuf);
+    return await readAndSaveClipboardImage();
   } catch (err) {
     log.error({ err }, 'falha ao salvar imagem do clipboard-read-image');
     return null;

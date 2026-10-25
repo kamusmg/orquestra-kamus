@@ -60,6 +60,26 @@ function formatFilePath(filePath: string): string {
   return trimmed;
 }
 
+async function readImageFromNavigatorClipboard(): Promise<string | null> {
+  if (typeof navigator === 'undefined' || !navigator.clipboard?.read) return null;
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imageType = item.types.find((t) => t.startsWith('image/'));
+      if (imageType) {
+        const blob = await item.getType(imageType);
+        const buffer = await blob.arrayBuffer();
+        if (window.orquestra?.saveDroppedFile) {
+          return await window.orquestra.saveDroppedFile('clipboard-print.png', new Uint8Array(buffer));
+        }
+      }
+    }
+  } catch {
+    // navigator.clipboard pode falhar se não tiver foco ou permissão no Electron
+  }
+  return null;
+}
+
 async function resolveDropFilePaths(files: File[]): Promise<string[]> {
   const paths: string[] = [];
   for (const file of files) {
@@ -84,12 +104,16 @@ async function resolveDropFilePaths(files: File[]): Promise<string[]> {
 
 function TerminalBody({
   name,
+  agent,
   readOnly,
   onAttachTerm,
+  onImageAttached,
 }: {
   name: string;
+  agent?: string;
   readOnly: boolean;
   onAttachTerm?: (term: Terminal | null) => void;
+  onImageAttached?: (imagePath: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -132,22 +156,34 @@ function TerminalBody({
         term.paste(text);
       });
     };
-    const pasteImageClipboard = () => {
+    const pasteImageClipboard = async () => {
       if (readOnlyRef.current) return;
-      void window.orquestra.readClipboardImage().then((imagePath) => {
-        if (readOnlyRef.current || !imagePath) return;
+      let imagePath: string | null = null;
+      try {
+        imagePath = await window.orquestra.readClipboardImage();
+      } catch {
+        imagePath = null;
+      }
+      if (!imagePath) {
+        imagePath = await readImageFromNavigatorClipboard();
+      }
+      if (readOnlyRef.current) return;
+      if (imagePath) {
         term.paste(formatFilePath(imagePath) + ' ');
-      });
+        onImageAttached?.(imagePath);
+      } else {
+        appStore.getState().notify('warn', 'Nenhuma imagem encontrada na área de transferência.');
+      }
     };
     term.attachCustomKeyEventHandler((event) => {
-      const action = terminalKeyAction(event, term.hasSelection());
+      const action = terminalKeyAction(event, term.hasSelection(), agent);
       if (action === 'pass') return true;
       // Sem isto o navegador dispararia a própria colagem e o texto chegaria duas vezes.
       event.preventDefault();
       if (action === 'copy') {
         copySelection();
       } else if (action === 'paste-image') {
-        pasteImageClipboard();
+        void pasteImageClipboard();
       } else {
         pasteClipboard();
       }
@@ -242,9 +278,27 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
   const { getNode, setCenter } = useReactFlow();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const attachedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragCounter = useRef(0);
   const termRef = useRef<Terminal | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleImageAttached = (filePath: string) => {
+    const fileName = filePath.split(/[/\\]/).pop() ?? 'imagem';
+    setAttachedImage(fileName);
+    if (attachedTimer.current) clearTimeout(attachedTimer.current);
+    attachedTimer.current = setTimeout(() => {
+      setAttachedImage(null);
+    }, 4000);
+    appStore.getState().notify('info', `📎 [imagem] anexada: ${fileName}`);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (attachedTimer.current) clearTimeout(attachedTimer.current);
+    };
+  }, []);
   useEffect(() => {
     if (!menu) return;
     const outside = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenu(null); };
@@ -312,6 +366,9 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
         termRef.current.paste(text);
       } else {
         void api.command('terminal.input', { name: data.name, data: text }).catch(() => {});
+      }
+      if (paths[0]) {
+        handleImageAttached(paths[0]);
       }
       return;
     }
@@ -381,6 +438,15 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
               {view.persona}
             </span>
           ) : null}
+          {attachedImage ? (
+            <span
+              className="chip attached-image-chip"
+              data-testid={`terminal-attached-image-${view.name}`}
+              title="Imagem anexada à conversa"
+            >
+              📎 [imagem: {attachedImage}]
+            </span>
+          ) : null}
           {view.locked ? <span className="chip" title="Posição bloqueada">🔒</span> : null}
           <span className={`term-state st-${view.state}`} data-testid={`terminal-state-${data.name}`}>
             <span className="dot" />
@@ -398,7 +464,7 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
             </div>
           ) : null}
           {view.unloaded ? <div className="terminal-unloaded nodrag nopan" data-testid={`terminal-unloaded-${data.name}`}><span>Agente parado</span><button onClick={() => void reload()}>Recarregar terminal</button></div> : <>
-            <div className={view.blurred ? 'term-content is-blurred' : 'term-content'}><NodeErrorBoundary name={data.name}><TerminalBody key={view.epoch} name={data.name} readOnly={readOnly} onAttachTerm={(term) => { termRef.current = term; }} /></NodeErrorBoundary></div>
+            <div className={view.blurred ? 'term-content is-blurred' : 'term-content'}><NodeErrorBoundary name={data.name}><TerminalBody key={view.epoch} name={data.name} agent={view.agent} readOnly={readOnly} onAttachTerm={(term) => { termRef.current = term; }} onImageAttached={handleImageAttached} /></NodeErrorBoundary></div>
             {view.blurred ? <div className="terminal-privacy nodrag nopan"><span>Conteúdo desfocado</span><button onClick={() => void api.command('terminal.presentation', { name: data.name, blurred: false }).then(() => appStore.getState().setTerminalPresentation(data.name, { blurred: false })).catch((error: Error) => appStore.getState().notify('error', error.message))}>Mostrar conteúdo</button></div> : null}
           </>}
         </div>

@@ -18,7 +18,12 @@ describe('terminalKeyAction', () => {
 
   it('Alt+V isolado aciona paste-image (salva imagem da área de transferência e cola o caminho no terminal)', () => {
     expect(terminalKeyAction(key('KeyV', { altKey: true }), false)).toBe('paste-image');
+    expect(terminalKeyAction(key('KeyV', { altKey: true }), false, 'agy')).toBe('paste-image');
     expect(terminalKeyAction(key('KeyV', { altKey: true, shiftKey: false, ctrlKey: false }), true)).toBe('paste-image');
+  });
+
+  it('Alt+V passa nativo para o agente Claude Code quando agent === claude', () => {
+    expect(terminalKeyAction(key('KeyV', { altKey: true }), false, 'claude')).toBe('pass');
   });
 
   it('Alt+V com outros modificadores (Ctrl ou Shift) segue para o agente sem disparar paste-image', () => {

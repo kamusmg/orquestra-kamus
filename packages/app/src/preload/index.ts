@@ -27,7 +27,32 @@ const bridge: OrquestraBridge = {
   // O Electron 44 não expõe o clipboard no preload: a leitura e a escrita passam pelo principal.
   readClipboard: () => ipcRenderer.invoke('orq:clipboard-read') as Promise<string>,
   writeClipboard: (text) => ipcRenderer.invoke('orq:clipboard-write', text) as Promise<void>,
-  readClipboardImage: () => ipcRenderer.invoke('orq:clipboard-read-image') as Promise<string | null>,
+  readClipboardImage: async () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.read === 'function') {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imageType = item.types.find((t) => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            if (blob && blob.size > 0) {
+              const arrayBuffer = await blob.arrayBuffer();
+              const data = new Uint8Array(arrayBuffer);
+              if (data.length > 0) {
+                const ext = imageType.split('/')[1]?.split('+')[0] || 'png';
+                const name = `clip-${Date.now()}.${ext}`;
+                const saved = await ipcRenderer.invoke('orq:save-dropped-file', { name, data }) as string;
+                if (saved) return saved;
+              }
+            }
+          }
+        }
+      } catch {
+        // Fallback para o processo principal caso o renderer não tenha permissão/foco
+      }
+    }
+    return ipcRenderer.invoke('orq:clipboard-read-image') as Promise<string | null>;
+  },
   saveDroppedFile: (name: string, data: Uint8Array) =>
     ipcRenderer.invoke('orq:save-dropped-file', { name, data }) as Promise<string>,
   getPathForFile: (file: File) => {

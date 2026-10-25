@@ -146,6 +146,46 @@ describe('TerminalNode — Alt+V e Drag & Drop de arquivos', () => {
     await waitFor(() => {
       expect(window.orquestra.readClipboardImage).toHaveBeenCalled();
       expect(mockPaste).toHaveBeenCalledWith('C:/data/clipboard/clip-123.png ');
+      expect(screen.getByTestId('terminal-attached-image-qa-term')).toBeDefined();
+    });
+  });
+
+  it('quando readClipboardImage falha, faz fallback para navigator.clipboard.read() e salva com saveDroppedFile', async () => {
+    (window.orquestra.readClipboardImage as any).mockResolvedValueOnce(null);
+    const dummyBlob = new Blob(['print-bytes'], { type: 'image/png' });
+    Object.assign(navigator, {
+      clipboard: {
+        read: vi.fn(async () => [
+          {
+            types: ['image/png'],
+            getType: vi.fn(async () => dummyBlob),
+          },
+        ]),
+      },
+    });
+
+    const props = { id: 'qa-term', data: { name: 'qa-term' }, selected: false } as any;
+    render(
+      <ReactFlowProvider>
+        <TerminalNode {...props} />
+      </ReactFlowProvider>
+    );
+
+    const preventDefault = vi.fn();
+    const event = {
+      type: 'keydown',
+      code: 'KeyV',
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: true,
+      preventDefault,
+    };
+
+    customKeyHandler!(event);
+
+    await waitFor(() => {
+      expect(window.orquestra.saveDroppedFile).toHaveBeenCalledWith('clipboard-print.png', expect.any(Uint8Array));
+      expect(mockPaste).toHaveBeenCalledWith('C:/data/clipboard/123-clipboard-print.png ');
     });
   });
 });
