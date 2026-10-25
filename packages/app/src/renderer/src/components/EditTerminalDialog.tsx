@@ -1,4 +1,11 @@
-import { formatArgs, parseArgs, reservedArgError } from '@orquestra/shared/args';
+import {
+  extractModelArg,
+  formatArgs,
+  normalizeUserArgs,
+  parseArgs,
+  replaceModelArg,
+  reservedArgError,
+} from '@orquestra/shared/args';
 import { terminalNameSchema, type HostAgent as AgentKind } from '@orquestra/shared/host-protocol';
 import { useState } from 'react';
 import type { CommandApi } from '../api';
@@ -6,6 +13,14 @@ import { appStore, useApp } from '../store';
 import { ArgsField } from './ArgsField';
 
 const sameArgs = (a: string[], b: string[]) => a.length === b.length && a.every((arg, index) => arg === b[index]);
+
+const parseArgsSafe = (text: string): string[] => {
+  try {
+    return parseArgs(text);
+  } catch {
+    return [];
+  }
+};
 
 export function EditTerminalDialog({ name, api, onClose }: { name: string; api: CommandApi; onClose(): void }) {
   const view = useApp((state) => state.terminals[name]);
@@ -32,6 +47,13 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
     } catch (parseError) {
       return setError((parseError as Error).message);
     }
+    const normalized = normalizeUserArgs(agent, args);
+    args = normalized.args;
+    let effectiveResume = resume;
+    if (normalized.impliedResume) {
+      effectiveResume = true;
+      setResume(true);
+    }
     const reserved = reservedArgError(agent, args);
     if (reserved) return setError(reserved);
 
@@ -48,7 +70,7 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
     if (agent !== view.agent) changes.agent = agent;
     if (cwd !== view.cwd) changes.cwd = cwd;
     if (!sameArgs(args, view.args)) changes.args = args;
-    if (agent !== 'shell' && resume !== view.resume) changes.resume = resume;
+    if (agent !== 'shell' && effectiveResume !== view.resume) changes.resume = effectiveResume;
     if (regente !== view.regente) changes.regente = regente;
     if (monitor !== view.monitor) changes.monitor = monitor;
     if (Object.keys(changes).length === 0) return onClose();
@@ -111,6 +133,26 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
           Argumentos
           <ArgsField agent={agent} value={argsText} onChange={setArgsText} testId="edit-terminal-args" disabled={submitting} />
         </label>
+        {(agent === 'agy' || agent === 'claude') ? (
+          <label className="dialog-field">
+            <span>Modelo (<code>--model</code> — fácil de trocar)</span>
+            <input
+              data-testid="edit-terminal-model"
+              list="orq-known-models"
+              placeholder="Padrão do agente (ex: gemini-3.8-flash-high, gemini-4-argon-high, opus)"
+              value={extractModelArg(parseArgsSafe(argsText))}
+              onChange={(e) => setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), e.target.value)))}
+              disabled={submitting}
+            />
+            <datalist id="orq-known-models">
+              <option value="gemini-4-argon-high">gemini-4-argon-high (Argon Tech Lead / Revisor)</option>
+              <option value="gemini-3.8-flash-high">gemini-3.8-flash-high (Flash High Executor / NanoBanana)</option>
+              <option value="gemini-3.8-flash-medium">gemini-3.8-flash-medium (Flash Medium Econômico)</option>
+              <option value="opus">opus (Claude Opus)</option>
+              <option value="sonnet">sonnet (Claude Sonnet)</option>
+            </datalist>
+          </label>
+        ) : null}
         <label className="check">
           <input
             type="checkbox"

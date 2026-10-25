@@ -93,7 +93,10 @@ export function Sidebar({
   // Workspaces abertos fora dos recentes ficam no topo, para nunca sumirem.
   const rows: Row[] = [
     ...workspaces.filter((workspace) => !recent.some((item) => sameDir(item.dir, workspace.dir))).map((workspace) => ({ dir: workspace.dir, name: workspace.name, workspace })),
-    ...recent.map((item) => ({ dir: item.dir, name: item.name, workspace: workspaces.find((workspace) => sameDir(workspace.dir, item.dir)) })),
+    ...recent.map((item) => {
+      const workspace = workspaces.find((w) => sameDir(w.dir, item.dir));
+      return { dir: item.dir, name: workspace?.name ?? item.name, workspace };
+    }),
   ];
   const needle = filter.trim().toLowerCase();
   const shown = rows.filter((row) => !needle || row.name.toLowerCase().includes(needle) || row.dir.toLowerCase().includes(needle));

@@ -1,8 +1,24 @@
 // Entrada sem módulos do Node: a interface roda no navegador do Electron.
-import { formatArgs, parseArgs, reservedArgError, type Settings } from '@orquestra/shared/args';
+import {
+  extractModelArg,
+  formatArgs,
+  normalizeUserArgs,
+  parseArgs,
+  replaceModelArg,
+  reservedArgError,
+  type Settings,
+} from '@orquestra/shared/args';
 import { terminalNameSchema, type HostAgent } from '@orquestra/shared/host-protocol';
 import { useState } from 'react';
 import { ArgsField } from './ArgsField';
+
+const parseArgsSafe = (text: string): string[] => {
+  try {
+    return parseArgs(text);
+  } catch {
+    return [];
+  }
+};
 
 const AGENTS: Array<{ id: HostAgent; label: string; disabled?: boolean }> = [
   { id: 'claude', label: 'Claude Code' },
@@ -68,6 +84,13 @@ export function NewTerminalDialog(props: {
     } catch (parseError) {
       return setError((parseError as Error).message);
     }
+    const normalized = normalizeUserArgs(agent, args);
+    args = normalized.args;
+    let effectiveResume = resume;
+    if (normalized.impliedResume) {
+      effectiveResume = true;
+      setResume(true);
+    }
     const reserved = reservedArgError(agent, args);
     if (reserved) return setError(reserved);
     setError(null);
@@ -77,7 +100,7 @@ export function NewTerminalDialog(props: {
         name,
         agent,
         cwd,
-        resume: agent !== 'shell' && resume,
+        resume: agent !== 'shell' && effectiveResume,
         args,
         regente,
         ...(agent !== 'shell' && persona ? { persona } : {}),
@@ -128,6 +151,26 @@ export function NewTerminalDialog(props: {
           Argumentos
           <ArgsField agent={agent} value={argsText} onChange={setArgsText} testId="new-terminal-args" disabled={submitting} />
         </label>
+        {(agent === 'agy' || agent === 'claude') ? (
+          <label className="dialog-field">
+            <span>Modelo (<code>--model</code> — fácil de trocar)</span>
+            <input
+              data-testid="new-terminal-model"
+              list="orq-known-models"
+              placeholder="Padrão do agente (ex: gemini-3.8-flash-high, gemini-4-argon-high, opus)"
+              value={extractModelArg(parseArgsSafe(argsText))}
+              onChange={(e) => setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), e.target.value)))}
+              disabled={submitting}
+            />
+            <datalist id="orq-known-models">
+              <option value="gemini-4-argon-high">gemini-4-argon-high (Argon Tech Lead / Revisor)</option>
+              <option value="gemini-3.8-flash-high">gemini-3.8-flash-high (Flash High Executor / NanoBanana)</option>
+              <option value="gemini-3.8-flash-medium">gemini-3.8-flash-medium (Flash Medium Econômico)</option>
+              <option value="opus">opus (Claude Opus)</option>
+              <option value="sonnet">sonnet (Claude Sonnet)</option>
+            </datalist>
+          </label>
+        ) : null}
         <label className="check">
           <input
             type="checkbox"

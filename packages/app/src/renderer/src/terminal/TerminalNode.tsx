@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { NodeResizer, NodeToolbar, Position, useReactFlow, useViewport, type NodeProps } from '@xyflow/react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { extractModelArg } from '@orquestra/shared/args';
 import { createCommandApi } from '../api';
 import type { TerminalFlowNode } from '../canvas/flow-nodes';
 import { ContextBar } from '../components/ContextBar';
@@ -233,6 +234,11 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
         <header className="term-hd" data-testid={`terminal-header-${data.name}`} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openMenu(event.clientX, event.clientY); }}>
           <span className="term-name">{view.name}</span>
           <span className="chip">{view.agent}</span>
+          {extractModelArg(view.args) ? (
+            <span className="chip" data-testid={`terminal-model-${view.name}`} title="Modelo ativo">
+              {extractModelArg(view.args)}
+            </span>
+          ) : null}
           {view.regente ? <span className="chip regente" data-testid={`terminal-regente-${view.name}`}>regente</span> : null}
           {view.locked ? <span className="chip" title="Posição bloqueada">🔒</span> : null}
           <span className={`term-state st-${view.state}`} data-testid={`terminal-state-${data.name}`}>

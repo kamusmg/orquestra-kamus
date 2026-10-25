@@ -54,6 +54,77 @@ export function formatArgs(args: string[]): string {
   return args.map((arg) => (arg === '' || /[\s"]/.test(arg) ? `"${arg.replaceAll('"', '\\"')}"` : arg)).join(' ');
 }
 
+export function normalizeUserArgs(agent: string, rawArgs: string[]): { args: string[]; impliedResume: boolean } {
+  let args = [...rawArgs];
+  let hadProgram = false;
+  if (args.length > 0) {
+    const first = args[0]!.toLowerCase().replace(/\.exe$/i, '');
+    const knownPrograms = ['claude', 'agy', 'codex', agent.toLowerCase()];
+    if (knownPrograms.includes(first)) {
+      args.shift();
+      hadProgram = true;
+    }
+  }
+
+  let impliedResume = false;
+  if (agent === 'claude') {
+    const shouldNormalizeResume = hadProgram || rawArgs.length > 1;
+    if (shouldNormalizeResume) {
+      const resumeFlags = ['--resume', '-r', '--continue', '-c'];
+      const filtered: string[] = [];
+      for (let i = 0; i < args.length; i++) {
+        const item = args[i]!;
+        if (resumeFlags.includes(item)) {
+          const next = args[i + 1];
+          if (next === undefined || next.startsWith('-')) {
+            impliedResume = true;
+            continue;
+          }
+        }
+        filtered.push(item);
+      }
+      args = filtered;
+    }
+  }
+
+  return { args, impliedResume };
+}
+
+export function extractModelArg(args: string[]): string {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg.startsWith('--model=')) {
+      return arg.slice('--model='.length).trim();
+    }
+    if (arg === '--model' && i + 1 < args.length) {
+      return args[i + 1]!.trim();
+    }
+  }
+  return '';
+}
+
+export function replaceModelArg(args: string[], model: string): string[] {
+  const cleaned: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg.startsWith('--model=')) {
+      continue;
+    }
+    if (arg === '--model') {
+      if (i + 1 < args.length && !args[i + 1]!.startsWith('--')) {
+        i++;
+      }
+      continue;
+    }
+    cleaned.push(arg);
+  }
+  const trimmed = model.trim();
+  if (trimmed) {
+    return ['--model', trimmed, ...cleaned];
+  }
+  return cleaned;
+}
+
 export const canvasMotionSchema = z.enum(['contained', 'minimal']);
 export type CanvasMotion = z.infer<typeof canvasMotionSchema>;
 

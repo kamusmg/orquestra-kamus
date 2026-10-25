@@ -23,7 +23,7 @@ export function resolveExecutable(name: string, deps: {
   }
   // Explorer may inherit a PATH without the shell's mise initialization.
   // Search only known installation directories, without invoking a login shell.
-  if (!candidates.some((path) => /\.(exe|cmd|bat)$/i.test(path)) && (name === 'codex' || name === 'agy')) {
+  if (!candidates.some((path) => /\.(exe|cmd|bat)$/i.test(path)) && (name === 'codex' || name === 'agy' || name === 'claude')) {
     const home = env.USERPROFILE ?? homedir();
     const local = env.LOCALAPPDATA ?? join(home, 'AppData', 'Local');
     const dirs = [dirname(deps.nodePath ?? process.execPath), join(env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'npm')];
@@ -32,6 +32,7 @@ export function resolveExecutable(name: string, deps: {
       dirs.push(...readdirSync(miseNode, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort((a, b) => b.localeCompare(a, undefined, { numeric: true })).map((version) => join(miseNode, version)));
     } catch { /* mise is optional */ }
     if (name === 'agy') dirs.unshift(join(local, 'agy', 'bin'));
+    if (name === 'claude') dirs.unshift(join(home, '.local', 'bin'), join(local, 'Programs', 'claude'));
     candidates = dirs.flatMap((dir) => [`${name}.exe`, `${name}.cmd`, `${name}.bat`].map((file) => join(dir, file))).filter(existsSync);
   }
   const exe = candidates.find((path) => path.toLowerCase().endsWith('.exe'));

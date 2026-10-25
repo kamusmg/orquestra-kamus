@@ -119,5 +119,14 @@ describe('NewTerminalDialog (resposta assíncrona)', () => {
     fireEvent.click(screen.getByTestId('new-terminal-submit'));
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ agent: 'claude', monitor: true })));
   });
+
+  it('permite escolher o modelo pelo campo new-terminal-model para agy e claude', async () => {
+    const onCreate = vi.fn(async () => {});
+    render(<NewTerminalDialog projectDir="C:/p" existingNames={[]} defaultArgs={{ claude: [], agy: [] }} onCancel={() => {}} onCreate={onCreate} />);
+    const modelInput = screen.getByTestId('new-terminal-model') as HTMLInputElement;
+    fireEvent.change(modelInput, { target: { value: 'gemini-3.8-flash-high' } });
+    fireEvent.click(screen.getByTestId('new-terminal-submit'));
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ args: ['--model', 'gemini-3.8-flash-high'] })));
+  });
 });
 

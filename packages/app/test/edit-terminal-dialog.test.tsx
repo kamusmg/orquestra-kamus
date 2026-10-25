@@ -137,5 +137,27 @@ describe('EditTerminalDialog', () => {
     expect(calls).toEqual([['terminal.update', { name: 'A', agent: 'agy' }]]);
     confirm.mockRestore();
   });
+
+  it('permite definir modelo pelo campo edit-terminal-model', async () => {
+    const { api, calls } = fakeApi(info({ name: 'A', args: ['--model', 'gemini-4-argon-high'] }));
+    const onClose = vi.fn();
+    render(<EditTerminalDialog name="A" api={api} onClose={onClose} />);
+    const modelInput = screen.getByTestId('edit-terminal-model') as HTMLInputElement;
+    fireEvent.change(modelInput, { target: { value: 'gemini-4-argon-high' } });
+    fireEvent.click(screen.getByTestId('edit-terminal-submit'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(calls).toEqual([['terminal.update', { name: 'A', args: ['--model', 'gemini-4-argon-high', '--append-system-prompt', 'fale em português'] }]]);
+  });
+
+  it('normaliza argumentos colados com nome do programa e --resume implícito', async () => {
+    const { api, calls } = fakeApi(info({ name: 'A', args: ['--dangerously-skip-permissions'] }));
+    const onClose = vi.fn();
+    render(<EditTerminalDialog name="A" api={api} onClose={onClose} />);
+    const argsInput = screen.getByTestId('edit-terminal-args');
+    fireEvent.change(argsInput, { target: { value: 'claude --dangerously-skip-permissions --resume' } });
+    fireEvent.click(screen.getByTestId('edit-terminal-submit'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(calls).toEqual([['terminal.update', { name: 'A', args: ['--dangerously-skip-permissions'] }]]);
+  });
 });
 

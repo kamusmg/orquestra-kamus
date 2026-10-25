@@ -77,4 +77,28 @@ describe('E/S de dados dos agentes desligada (AGENT_FLOW_IO)', () => {
     expect(screen.queryByText(/Terminais de agentes têm suas próprias portas E\/S/i)).toBeNull();
     expect(screen.getByText(/Conecte uma saída à entrada da etapa seguinte/i)).toBeDefined();
   });
+
+  it('TerminalNode exibe chip com o modelo ativo quando view.args contiver --model', () => {
+    appStore.getState().addTerminal({
+      name: 'model-term',
+      agent: 'agy',
+      state: 'idle',
+      queued: 0,
+      cwd: 'C:/p',
+      resume: false,
+      args: ['--model', 'gemini-4-argon-high'],
+      regente: false,
+      monitor: false,
+      unloaded: true,
+    });
+    const props = { id: 'model-term', data: { name: 'model-term' }, selected: false } as unknown as Parameters<typeof TerminalNode>[0];
+    render(
+      <ReactFlowProvider>
+        <TerminalNode {...props} />
+      </ReactFlowProvider>
+    );
+    const chip = screen.getByTestId('terminal-model-model-term');
+    expect(chip.textContent).toBe('gemini-4-argon-high');
+    expect(chip.getAttribute('title')).toBe('Modelo ativo');
+  });
 });
