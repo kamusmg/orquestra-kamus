@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { personaBrief, personaSchema, REGENT_COMMANDS, regentGuide } from '../src/regent.js';
+import { PERSONA_EVOLUTION_NOTICE, personaBrief, personaSchema, REGENT_COMMANDS, regentGuide } from '../src/regent.js';
 
 describe('funções e guia do regente', () => {
   it('função precisa de nome válido e texto não vazio', () => {
@@ -19,7 +19,7 @@ describe('funções e guia do regente', () => {
 
   it('a entrega da função começa pelo cabeçalho e inclui o guia só para regente', () => {
     const persona = { name: 'executor', text: 'Implemente as tarefas.' };
-    expect(personaBrief(persona, { regent: false })).toBe('[orq] Sua função: executor\nImplemente as tarefas.');
-    expect(personaBrief(persona, { regent: true })).toBe(`[orq] Sua função: executor\nImplemente as tarefas.\n\n${regentGuide()}`);
+    expect(personaBrief(persona, { regent: false })).toBe(`[orq] Sua função: executor\nImplemente as tarefas.\n\n${PERSONA_EVOLUTION_NOTICE}`);
+    expect(personaBrief(persona, { regent: true })).toBe(`[orq] Sua função: executor\nImplemente as tarefas.\n\n${PERSONA_EVOLUTION_NOTICE}\n\n${regentGuide()}`);
   });
 });

@@ -21,6 +21,7 @@ export type TerminalView = {
   resume: boolean;
   regente: boolean;
   monitor: boolean;
+  persona?: string | null;
   unloaded?: boolean;
   blurred?: boolean;
   locked?: boolean;
@@ -213,12 +214,13 @@ export function createAppStore() {
       } else if (event.type === 'note.removed') {
         get().removeNote(event.name);
       } else if (event.type === 'terminal.added') {
+        const existing = get().terminals[event.info.name];
         const view: TerminalView = {
           ...event.info,
           position: { x: event.rect.x, y: event.rect.y },
           size: { width: event.rect.width, height: event.rect.height },
-          notice: null,
-          epoch: 0,
+          notice: existing?.notice ?? null,
+          epoch: existing?.epoch ?? 0,
         };
         set({ terminals: { ...get().terminals, [event.info.name]: view } });
         if (event.connectedTo) get().addEdge({ a: event.connectedTo, b: event.info.name });

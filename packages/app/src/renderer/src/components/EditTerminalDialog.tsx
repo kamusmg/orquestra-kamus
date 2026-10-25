@@ -7,7 +7,8 @@ import {
   reservedArgError,
 } from '@orquestra/shared/args';
 import { terminalNameSchema, type HostAgent as AgentKind } from '@orquestra/shared/host-protocol';
-import { useState } from 'react';
+import type { PersonaScope } from '@orquestra/shared/regent';
+import { useEffect, useState } from 'react';
 import type { CommandApi } from '../api';
 import { appStore, useApp } from '../store';
 import { ArgsField } from './ArgsField';
@@ -28,11 +29,21 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
   const [agent, setAgent] = useState<AgentKind>(view?.agent ?? 'claude');
   const [cwd, setCwd] = useState(view?.cwd ?? '');
   const [argsText, setArgsText] = useState(formatArgs(view?.args ?? []));
+  const [persona, setPersona] = useState<string>(view?.persona ?? '');
+  const [personas, setPersonas] = useState<Array<{ name: string; scope: PersonaScope }>>([]);
   const [resume, setResume] = useState(view?.resume ?? true);
   const [regente, setRegente] = useState(view?.regente ?? false);
   const [monitor, setMonitor] = useState(view?.monitor ?? true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    void api
+      .command('persona.list', {})
+      .then((res) => setPersonas((res as { personas?: Array<{ name: string; scope: PersonaScope }> })?.personas ?? []))
+      .catch(() => setPersonas([]));
+  }, [api]);
+
   if (!view) return null;
 
   const submit = async () => {
@@ -65,6 +76,7 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
       resume?: boolean;
       regente?: boolean;
       monitor?: boolean;
+      persona?: string | null;
     } = {};
     if (trimmed !== name) changes.newName = trimmed;
     if (agent !== view.agent) changes.agent = agent;
@@ -73,6 +85,10 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
     if (agent !== 'shell' && effectiveResume !== view.resume) changes.resume = effectiveResume;
     if (regente !== view.regente) changes.regente = regente;
     if (monitor !== view.monitor) changes.monitor = monitor;
+    if (agent !== 'shell') {
+      const currentPersona = view.persona ?? '';
+      if (persona !== currentPersona) changes.persona = persona || null;
+    }
     if (Object.keys(changes).length === 0) return onClose();
     const relaunch = agent !== view.agent || changes.cwd !== undefined || changes.args !== undefined;
     const busy = view.state === 'busy' || view.queued > 0;
@@ -112,6 +128,7 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
               if (nextAgent === 'shell') {
                 setResume(false);
                 setRegente(false);
+                setPersona('');
               }
             }}
           >
@@ -151,6 +168,24 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
               <option value="opus">opus (Claude Opus)</option>
               <option value="sonnet">sonnet (Claude Sonnet)</option>
             </datalist>
+          </label>
+        ) : null}
+        {agent !== 'shell' ? (
+          <label className="dialog-field">
+            <span>Função embutida (evoluível pelo Regente)</span>
+            <select
+              data-testid="edit-terminal-persona"
+              value={persona}
+              onChange={(event) => setPersona(event.target.value)}
+              disabled={submitting}
+            >
+              <option value="">Sem função</option>
+              {(personas ?? []).map((item) => (
+                <option key={item.name} value={item.name}>
+                  {item.name} ({item.scope === 'project' ? 'projeto' : 'global'})
+                </option>
+              ))}
+            </select>
           </label>
         ) : null}
         <label className="check">

@@ -225,6 +225,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       resume: descriptor?.resume ?? true,
       args: descriptor?.args ?? [],
       regente: descriptor?.regente ?? false,
+      persona: descriptor?.persona ?? null,
       monitor: descriptor?.monitor ?? false,
       ...(descriptor?.unloaded ? { unloaded: true } : {}),
       ...project?.state.presentation(session.name),
@@ -360,7 +361,11 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       const targetDesc = orquestra.describeTerminals().find((t) => t.name === params.target);
       if (!targetDesc) throw new OrqError('NOT_FOUND', `Terminal ${params.target} não existe.`);
       const persona = resolvePersona(params.persona);
+      const session = await orquestra.updateTerminal(params.target, { persona: params.persona });
       orquestra.brief(params.target, caller, personaBrief(persona, { regent: targetDesc.regente }));
+      changed();
+      const rect = project?.state.rectOf(params.target) ?? { x: 80, y: 80, ...TERMINAL_SIZE };
+      opts.send({ kind: 'event', event: { type: 'terminal.added', info: info(session), rect, connectedTo: null } });
       return {};
     },
     'persona.list': async () => {
@@ -728,6 +733,16 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
     'terminal.update': async ({ name, ...changes }) => {
       opts.log.info({ terminal: name, method: 'terminal.update', keys: Object.keys(changes) }, 'comando da interface');
       const before = orquestra.describeTerminals().find((terminal) => terminal.name === name);
+      let resolvedPersona: Persona | undefined;
+      if (changes.persona !== undefined) {
+        const effectiveAgent = changes.agent ?? before?.agent;
+        if (effectiveAgent === 'shell' && changes.persona) {
+          throw new OrqError('USAGE', 'O shell não recebe funções.');
+        }
+        if (changes.persona && changes.persona !== before?.persona) {
+          resolvedPersona = resolvePersona(changes.persona);
+        }
+      }
       if (changes.agent === 'agy' && before?.agent !== 'agy') {
         const result = await ensureAgyGlobalHook({
           command: agyStopHookCommand(opts.cliScript),
@@ -741,7 +756,10 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       const session = await orquestra.updateTerminal(name, changes);
       if (changes.newName && changes.newName !== name) project?.state.rename(name, changes.newName);
       syncFlowAgents();
-      if (changes.regente === true && !before?.regente && session.adapter.acceptsPrompts) {
+      const descriptor = orquestra.describeTerminals().find((terminal) => terminal.name === (changes.newName ?? name));
+      if (resolvedPersona && session.adapter.acceptsPrompts && !descriptor?.unloaded) {
+        orquestra.brief(session.name, 'Orquestra', personaBrief(resolvedPersona, { regent: Boolean(descriptor?.regente) }));
+      } else if (changes.regente === true && !before?.regente && session.adapter.acceptsPrompts) {
         orquestra.brief(session.name, 'Orquestra', regentGuide());
       }
       recordPids();
@@ -757,7 +775,20 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
     },
     'terminal.restart': async ({ name }) => {
       opts.log.info({ terminal: name, method: 'terminal.restart' }, 'comando da interface');
+      const before = orquestra.describeTerminals().find((terminal) => terminal.name === name);
       const session = await orquestra.restartTerminal(name);
+      if (before?.unloaded && !before?.agentSessionId && session.adapter.acceptsPrompts) {
+        if (before.persona) {
+          try {
+            const persona = resolvePersona(before.persona);
+            orquestra.brief(session.name, 'Orquestra', personaBrief(persona, { regent: before.regente }));
+          } catch (error) {
+            opts.log.warn({ err: error, terminal: name, persona: before.persona }, 'não foi possível resolver a função ao reiniciar');
+          }
+        } else if (before.regente) {
+          orquestra.brief(session.name, 'Orquestra', regentGuide());
+        }
+      }
       recordPids();
       changed();
       return info(session);

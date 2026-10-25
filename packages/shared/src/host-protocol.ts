@@ -28,6 +28,7 @@ export const terminalChangesSchema = z.object({
   resume: z.boolean().optional(),
   regente: z.boolean().optional(),
   monitor: z.boolean().optional(),
+  persona: z.string().nullable().optional(),
 });
 export type TerminalChanges = z.infer<typeof terminalChangesSchema>;
 
@@ -42,6 +43,7 @@ export const terminalInfoSchema = z.object({
   args: z.array(z.string()),
   regente: z.boolean(),
   monitor: z.boolean(),
+  persona: z.string().nullable().optional(),
   unloaded: z.boolean().optional(),
   blurred: z.boolean().optional(),
   locked: z.boolean().optional(),
@@ -176,6 +178,7 @@ export const hostMethodSchemas = {
       resume: z.boolean().optional(),
       regente: z.boolean().optional(),
       monitor: z.boolean().optional(),
+      persona: z.string().nullable().optional(),
     }),
     result: terminalInfoSchema,
   },

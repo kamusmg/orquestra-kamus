@@ -27,7 +27,7 @@ const MAX_SESSION_DIRS = 20;
 
 export type TerminalDescriptor = { id: string; name: string; agent: string; cwd: string; args: string[]; resume: boolean; agentSessionId: string | null; regente: boolean; persona: string | null; monitor: boolean; unloaded?: boolean; /** Pastas de sessão de cada lançamento (vínculo com o job em segundo plano); não vai para o workspace. */ sessionDirs?: string[] };
 export type CreateTerminalInput = { name: string; agent: string; cwd: string; id?: string; args?: string[]; resume?: boolean; agentSessionId?: string | null; regente?: boolean; persona?: string | null; monitor?: boolean; unloaded?: boolean; sessionDirs?: string[] };
-export type TerminalChanges = { newName?: string; agent?: AgentKind; cwd?: string; args?: string[]; resume?: boolean; regente?: boolean; monitor?: boolean };
+export type TerminalChanges = { newName?: string; agent?: AgentKind; cwd?: string; args?: string[]; resume?: boolean; regente?: boolean; monitor?: boolean; persona?: string | null };
 
 export type OrquestraOptions = {
   pipePath: string;
@@ -453,6 +453,9 @@ export async function createOrquestra(opts: OrquestraOptions): Promise<Orquestra
     if (newName !== name) renameTerminal(name, newName);
     config.regente = changes.regente ?? config.regente;
     config.resume = changes.resume ?? config.resume;
+    if (changes.persona !== undefined) {
+      config.persona = changes.persona ?? null;
+    }
     if (agentChanged) {
       config.agent = agent;
       config.agentSessionId = null;

@@ -34,6 +34,18 @@ const api = createCommandApi(window.orquestra.invoke);
 const STATE_LABEL = { starting: 'iniciando', idle: 'ocioso', busy: 'ocupado', waiting: 'aguardando você', exited: 'encerrado' } as const;
 const RESIZE_DEBOUNCE_MS = 100;
 
+function personaToneClass(persona: string): string {
+  const p = persona.toLowerCase();
+  if (p.includes('lead') || p.includes('architect') || p.includes('arquiteto')) return 'persona-amber';
+  if (p.includes('staff') || p.includes('gatekeeper') || p.includes('revisor')) return 'persona-cyan';
+  if (p.includes('backend') || p.includes('rust') || p.includes('pesquisa')) return 'persona-emerald';
+  if (p.includes('frontend') || p.includes('ui') || p.includes('copy')) return 'persona-purple';
+  if (p.includes('fullstack') || p.includes('builder') || p.includes('fast')) return 'persona-blue';
+  if (p.includes('nano') || p.includes('image') || p.includes('arte')) return 'persona-rose';
+  if (p.includes('qa') || p.includes('sec') || p.includes('test')) return 'persona-teal';
+  return 'persona-indigo';
+}
+
 /** Altura de uma linha em pixels de layout (não muda com o zoom do canvas). */
 function cellHeightOf(term: Terminal): number {
   const screen = term.element?.querySelector('.xterm-screen');
@@ -240,6 +252,16 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
             </span>
           ) : null}
           {view.regente ? <span className="chip regente" data-testid={`terminal-regente-${view.name}`}>regente</span> : null}
+          {view.persona ? (
+            <span
+              className={`chip persona-chip ${personaToneClass(view.persona)}`}
+              data-testid={`terminal-persona-${view.name}`}
+              title={`Função embutida: ${view.persona} (evoluível pelo Regente via orq brief)`}
+            >
+              <span className="persona-dot" />
+              {view.persona}
+            </span>
+          ) : null}
           {view.locked ? <span className="chip" title="Posição bloqueada">🔒</span> : null}
           <span className={`term-state st-${view.state}`} data-testid={`terminal-state-${data.name}`}>
             <span className="dot" />

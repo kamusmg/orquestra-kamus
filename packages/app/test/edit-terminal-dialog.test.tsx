@@ -12,7 +12,15 @@ const info = (overrides = {}) => ({ name: 'A', agent: 'claude', state: 'idle' as
 
 function fakeApi(result: unknown = info()) {
   const calls: Array<[string, unknown]> = [];
-  const api = { command: (async (method: string, params: unknown) => { calls.push([method, params]); return result; }) as CommandApi['command'] };
+  const api = {
+    command: (async (method: string, params: unknown) => {
+      if (method === 'persona.list') {
+        return { personas: [] };
+      }
+      calls.push([method, params]);
+      return result;
+    }) as CommandApi['command']
+  };
   return { api, calls };
 }
 
@@ -158,6 +166,25 @@ describe('EditTerminalDialog', () => {
     fireEvent.click(screen.getByTestId('edit-terminal-submit'));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(calls).toEqual([['terminal.update', { name: 'A', args: ['--dangerously-skip-permissions'] }]]);
+  });
+
+  it('permite selecionar persona e envia terminal.update com persona', async () => {
+    const { api, calls } = fakeApi(info({ name: 'A', persona: 'revisor' }));
+    api.command = async (method: string, params: unknown) => {
+      calls.push([method, params]);
+      if (method === 'persona.list') {
+        return { personas: [{ name: 'revisor', scope: 'project' }, { name: 'lead', scope: 'global' }] };
+      }
+      return info();
+    };
+    const onClose = vi.fn();
+    render(<EditTerminalDialog name="A" api={api} onClose={onClose} />);
+    const personaSelect = await screen.findByTestId('edit-terminal-persona');
+    expect(await screen.findByText('revisor (projeto)')).toBeTruthy();
+    fireEvent.change(personaSelect, { target: { value: 'revisor' } });
+    fireEvent.click(screen.getByTestId('edit-terminal-submit'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(calls.some(([m, p]) => m === 'terminal.update' && (p as any).persona === 'revisor')).toBe(true);
   });
 });
 

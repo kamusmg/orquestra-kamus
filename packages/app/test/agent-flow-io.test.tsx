@@ -101,4 +101,30 @@ describe('E/S de dados dos agentes desligada (AGENT_FLOW_IO)', () => {
     expect(chip.textContent).toBe('gemini-4-argon-high');
     expect(chip.getAttribute('title')).toBe('Modelo ativo');
   });
+
+  it('TerminalNode exibe crachá de persona colorida estilo Maestri', () => {
+    appStore.getState().addTerminal({
+      name: 'persona-term',
+      agent: 'agy',
+      state: 'idle',
+      queued: 0,
+      cwd: 'C:/p',
+      resume: false,
+      args: [],
+      persona: 'Arquiteto de Oferta',
+      regente: false,
+      monitor: false,
+      unloaded: true,
+    });
+    const props = { id: 'persona-term', data: { name: 'persona-term' }, selected: false } as unknown as Parameters<typeof TerminalNode>[0];
+    render(
+      <ReactFlowProvider>
+        <TerminalNode {...props} />
+      </ReactFlowProvider>
+    );
+    const badge = screen.getByTestId('terminal-persona-persona-term');
+    expect(badge.textContent).toBe('Arquiteto de Oferta');
+    expect(badge.className).toContain('persona-amber');
+    expect(badge.getAttribute('title')).toContain('Função embutida: Arquiteto de Oferta');
+  });
 });

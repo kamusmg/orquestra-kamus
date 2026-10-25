@@ -28,6 +28,10 @@ export function regentGuide(): string {
     'Execute orq whoami e orq peers para confirmar sua identidade e os terminais conectados antes de enviar tarefas.',
     ...REGENT_COMMANDS.map((command) => `  ${command.usage}  ${command.description}`),
     'Use orq prompt <terminal> "<tarefa>" para passar tarefas e orq read <terminal> para acompanhar.',
+    'Evolução contínua de funções (você pode aprimorar a função de qualquer janela a qualquer momento):',
+    '  orq persona show <função>                  ler as instruções atuais da função',
+    '  orq persona write <função> "<novo texto>"  evoluir/refinar o prompt da função no projeto',
+    '  orq brief <terminal> <função>              aplicar a função evoluída na janela (atualiza o crachá e envia o novo briefing)',
   ].join('\n');
 }
 
@@ -50,7 +54,10 @@ export function orquestraGuide(opts: { terminalName?: string; regent: boolean; c
   ].filter(Boolean).join('\n');
 }
 
+export const PERSONA_EVOLUTION_NOTICE =
+  'Sua função embutida está sujeita à evolução contínua pelo Regente (via orq persona write + orq brief). Sempre que receber um novo briefing de função, adote imediatamente as diretrizes evoluídas.';
+
 export function personaBrief(persona: Persona, opts: { regent: boolean }): string {
-  const brief = `[orq] Sua função: ${persona.name}\n${persona.text}`;
+  const brief = `[orq] Sua função: ${persona.name}\n${persona.text}\n\n${PERSONA_EVOLUTION_NOTICE}`;
   return opts.regent ? `${brief}\n\n${regentGuide()}` : brief;
 }
