@@ -184,6 +184,8 @@ function TerminalBody({
         copySelection();
       } else if (action === 'paste-image') {
         void pasteImageClipboard();
+      } else if (action === 'newline') {
+        void api.command('terminal.input', { name, data: '\x1b\r' });
       } else {
         pasteClipboard();
       }
