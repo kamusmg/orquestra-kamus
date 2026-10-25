@@ -16,7 +16,7 @@ export function getCerebroInstruction(customPath?: string): string | null {
   return [
     CEREBRO_TOKEN_ECONOMY_HEADER,
     `Diretriz de Economia Brutal de Tokens (Cérebro ativo em: ${cerebroPath}):`,
-    '1. Consulte PRIMEIRO o índice, sinais vitais (`node check-brain.mjs`) e memórias destiladas (`memory/*.md`) antes de realizar varreduras amplas com Grep/Read/Glob em múltiplos arquivos.',
+    `1. Consulte PRIMEIRO o índice, sinais vitais (\`node check-brain.mjs\`) e memórias destiladas (\`memory/*.md\`) em ORQ_CEREBRO_PATH (${cerebroPath}) antes de realizar varreduras amplas com Grep/Read/Glob em múltiplos arquivos de código.`,
     '2. Redução comprovada de 6x a 34x de consumo de tokens reutilizando decisões arquiteturais e mapeamentos prévios.',
     '3. REGRA CRÍTICA DE PRIVACIDADE: O Cérebro é 100% privado. NUNCA exponha caminhos locais, arquivos ou dados do Cérebro em commits ou repositórios públicos.',
   ].join('\n');

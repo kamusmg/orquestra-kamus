@@ -36,6 +36,7 @@ import {
 } from '@orquestra/shared';
 import { getCerebroInstruction, resolveSessionGuide } from './instructions.js';
 import { formatBracketedPrompt } from './control-pipe.js';
+import { loadHostEnv } from './env-loader.js';
 import {
   createOrquestra,
   readCodexUsage,
@@ -298,6 +299,7 @@ export function ensureAgyDefaultModel(
 }
 
 export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBridge> {
+  loadHostEnv();
   let orquestra: Orquestra;
   const orq = (): Orquestra => {
     if (!orquestra) throw new OrqError('APP_UNAVAILABLE', 'Núcleo não inicializado.');
@@ -622,7 +624,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
         launch: (ctx) => {
           const spec = adapter.launch(ctx);
           if (process.env.ORQ_CEREBRO_PATH) {
-            spec.env = { ...spec.env, ORQ_CEREBRO_PATH: process.env.ORQ_CEREBRO_PATH };
+            spec.env = { ...(spec.env ?? {}), ORQ_CEREBRO_PATH: process.env.ORQ_CEREBRO_PATH };
           }
           return spec;
         },
@@ -885,6 +887,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       if (!existsSync(dir) || !statSync(dir).isDirectory()) {
         throw new OrqError('USAGE', `A pasta ${dir} não existe. Escolha outra pasta de projeto.`);
       }
+      loadHostEnv(dir);
       if (project?.dir === dir) return snapshot(project);
       await closeProject();
       const loaded = loadWorkspace(dir);
@@ -1270,6 +1273,15 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
         };
         current.state.place(name, rect);
         createdTerminals.push(name);
+        if (session.adapter.acceptsPrompts) {
+          const resolvedPersona = persona ? resolvePersona(persona) : undefined;
+          if (resolvedPersona) {
+            orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ persona: resolvedPersona, regente: false })!);
+          } else if (['agy', 'claude', 'codex'].includes(t.agent)) {
+            const cerebroGuide = getCerebroInstruction();
+            if (cerebroGuide) orquestra.brief(session.name, 'Orquestra', cerebroGuide);
+          }
+        }
         opts.send({
           kind: 'event',
           event: {
