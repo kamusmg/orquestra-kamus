@@ -262,6 +262,22 @@ export async function startWorkspaceManager(opts: HostBridgeOptions & { maxWorks
             case 'list': {
               return list();
             }
+            case 'list-models': {
+              const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
+              if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');
+              return call(targetBridge, 'models.list', { refresh: cmd.refresh });
+            }
+            case 'create-terminal': {
+              const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
+              if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');
+              const response = await targetBridge.handle(cmd);
+              if (response && typeof response === 'object' && 'ok' in response) {
+                const resp = response as { ok: boolean; result?: unknown; error?: { code: string; message: string } };
+                if (!resp.ok) throw new OrqError((resp.error?.code as any) ?? 'INTERNAL', resp.error?.message ?? 'Erro ao criar terminal.');
+                return resp.result;
+              }
+              return response;
+            }
             case 'update-terminal': {
               const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
               if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');

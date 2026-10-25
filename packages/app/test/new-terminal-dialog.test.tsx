@@ -128,5 +128,38 @@ describe('NewTerminalDialog (resposta assíncrona)', () => {
     fireEvent.click(screen.getByTestId('new-terminal-submit'));
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ args: ['--model', 'gemini-3.8-flash-high'] })));
   });
+
+  it('permite definir modelo pelos botões rápidos em NewTerminalDialog', async () => {
+    const onCreate = vi.fn(async () => {});
+    const api = {
+      command: vi.fn(async (method: string) => {
+        if (method === 'models.list') {
+          return {
+            models: [{ id: 'gemini-4-argon-high', label: 'Argon Lead', agent: 'agy' }],
+            recommendedFlash: 'gemini-3.8-flash-high',
+            recommendedLead: 'gemini-4-argon-high',
+          };
+        }
+        return {};
+      }),
+    } as any;
+    render(
+      <NewTerminalDialog
+        projectDir="C:/p"
+        existingNames={[]}
+        defaultArgs={{ claude: [], agy: [] }}
+        api={api}
+        onCancel={() => {}}
+        onCreate={onCreate}
+      />
+    );
+    const leadBtn = await screen.findByRole('button', { name: /🧠 Lead Atual/i });
+    fireEvent.click(leadBtn);
+    const modelInput = screen.getByTestId('new-terminal-model') as HTMLInputElement;
+    expect(modelInput.value).toBe('gemini-4-argon-high');
+    const autoFlashBtn = screen.getByRole('button', { name: /🔄 Auto-Flash/i });
+    fireEvent.click(autoFlashBtn);
+    expect(modelInput.value).toBe('auto-flash');
+  });
 });
 

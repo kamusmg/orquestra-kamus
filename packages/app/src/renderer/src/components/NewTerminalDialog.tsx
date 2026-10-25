@@ -9,7 +9,8 @@ import {
   type Settings,
 } from '@orquestra/shared/args';
 import { terminalNameSchema, type HostAgent } from '@orquestra/shared/host-protocol';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createCommandApi, type CommandApi } from '../api';
 import { ArgsField } from './ArgsField';
 
 const parseArgsSafe = (text: string): string[] => {
@@ -39,6 +40,7 @@ export function NewTerminalDialog(props: {
   existingNames: string[];
   defaultArgs: Partial<Settings['defaultArgs']>;
   personas?: string[];
+  api?: CommandApi;
   onCancel(): void;
   onCreate(input: {
     name: string;
@@ -51,6 +53,26 @@ export function NewTerminalDialog(props: {
     monitor: boolean;
   }): Promise<void>;
 }) {
+  const api = useMemo(
+    () => props.api ?? (typeof window !== 'undefined' && (window as unknown as { orquestra?: { invoke: unknown } })?.orquestra?.invoke ? createCommandApi(window.orquestra.invoke) : undefined),
+    [props.api]
+  );
+  const [liveModels, setLiveModels] = useState<Array<{ id: string; label: string; agent: string }>>([]);
+  const [recommendedFlash, setRecommendedFlash] = useState<string>('gemini-3.8-flash-high');
+  const [recommendedLead, setRecommendedLead] = useState<string>('gemini-4-argon-high');
+
+  useEffect(() => {
+    if (!api) return;
+    void api
+      .command('models.list' as never, {} as never)
+      .then((res: { models?: Array<{ id: string; label: string; agent: string }>; recommendedFlash?: string | null; recommendedLead?: string | null }) => {
+        if (res?.models?.length) setLiveModels(res.models);
+        if (res?.recommendedFlash) setRecommendedFlash(res.recommendedFlash);
+        if (res?.recommendedLead) setRecommendedLead(res.recommendedLead);
+      })
+      .catch(() => {});
+  }, [api]);
+
   const defaultMonitor = (kind: HostAgent) => kind !== 'shell';
   const [agent, setAgent] = useState<HostAgent>('claude');
   const [name, setName] = useState(() => suggestName('claude', props.existingNames));
@@ -156,18 +178,69 @@ export function NewTerminalDialog(props: {
             <span>Modelo (<code>--model</code> — fácil de trocar)</span>
             <input
               data-testid="new-terminal-model"
-              list="orq-known-models"
+              list="new-orq-known-models"
               placeholder="Padrão do agente (ex: gemini-3.8-flash-high, gemini-4-argon-high, opus)"
               value={extractModelArg(parseArgsSafe(argsText))}
               onChange={(e) => setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), e.target.value)))}
               disabled={submitting}
             />
-            <datalist id="orq-known-models">
-              <option value="gemini-4-argon-high">gemini-4-argon-high (Argon Tech Lead / Revisor)</option>
-              <option value="gemini-3.8-flash-high">gemini-3.8-flash-high (Flash High Executor / NanoBanana)</option>
-              <option value="gemini-3.8-flash-medium">gemini-3.8-flash-medium (Flash Medium Econômico)</option>
-              <option value="opus">opus (Claude Opus)</option>
-              <option value="sonnet">sonnet (Claude Sonnet)</option>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+              <button
+                type="button"
+                className="chip"
+                style={{ cursor: 'pointer', fontSize: '11px', padding: '2px 8px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.15)' }}
+                disabled={submitting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), recommendedFlash)));
+                }}
+              >
+                ⚡ Flash Atual ({recommendedFlash})
+              </button>
+              <button
+                type="button"
+                className="chip"
+                style={{ cursor: 'pointer', fontSize: '11px', padding: '2px 8px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.15)' }}
+                disabled={submitting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), recommendedLead)));
+                }}
+              >
+                🧠 Lead Atual ({recommendedLead})
+              </button>
+              <button
+                type="button"
+                className="chip"
+                style={{ cursor: 'pointer', fontSize: '11px', padding: '2px 8px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.15)' }}
+                disabled={submitting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), 'auto-flash')));
+                }}
+              >
+                🔄 Auto-Flash (sempre o mais novo)
+              </button>
+            </div>
+            <datalist id="new-orq-known-models">
+              <option value="auto-flash">auto-flash (Sempre usar o Flash High mais recente — atual: {recommendedFlash})</option>
+              <option value="auto-lead">auto-lead (Sempre usar o Lead/Argon High mais recente — atual: {recommendedLead})</option>
+              {liveModels.length > 0 ? (
+                liveModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id} ({m.label})
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="gemini-4-argon-high">gemini-4-argon-high (Argon Tech Lead / Revisor)</option>
+                  <option value="gemini-3.8-flash-high">gemini-3.8-flash-high (Flash High Executor / NanoBanana)</option>
+                  <option value="gemini-3.8-flash-medium">gemini-3.8-flash-medium (Flash Medium Econômico)</option>
+                  <option value="claude-opus-5-5-high">claude-opus-5-5-high</option>
+                  <option value="opus">opus (Claude Opus)</option>
+                  <option value="sonnet">sonnet (Claude Sonnet)</option>
+                </>
+              )}
             </datalist>
           </label>
         ) : null}

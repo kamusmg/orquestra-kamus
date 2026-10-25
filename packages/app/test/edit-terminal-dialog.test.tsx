@@ -17,6 +17,9 @@ function fakeApi(result: unknown = info()) {
       if (method === 'persona.list') {
         return { personas: [] };
       }
+      if (method === 'models.list') {
+        return { models: [], recommendedFlash: 'gemini-3.8-flash-high', recommendedLead: 'gemini-4-argon-high' };
+      }
       calls.push([method, params]);
       return result;
     }) as CommandApi['command']
@@ -171,6 +174,9 @@ describe('EditTerminalDialog', () => {
   it('permite selecionar persona e envia terminal.update com persona', async () => {
     const { api, calls } = fakeApi(info({ name: 'A', persona: 'revisor' }));
     api.command = async (method: string, params: unknown) => {
+      if (method === 'models.list') {
+        return { models: [], recommendedFlash: 'gemini-3.8-flash-high', recommendedLead: 'gemini-4-argon-high' };
+      }
       calls.push([method, params]);
       if (method === 'persona.list') {
         return { personas: [{ name: 'revisor', scope: 'project' }, { name: 'lead', scope: 'global' }] };
@@ -185,6 +191,31 @@ describe('EditTerminalDialog', () => {
     fireEvent.click(screen.getByTestId('edit-terminal-submit'));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(calls.some(([m, p]) => m === 'terminal.update' && (p as any).persona === 'revisor')).toBe(true);
+  });
+
+  it('carrega modelos ao vivo e permite definir modelo pelos botões rápidos', async () => {
+    const { api, calls } = fakeApi(info({ name: 'A', agent: 'agy', args: [] }));
+    api.command = async (method: string, params: unknown) => {
+      if (method === 'models.list') {
+        return {
+          models: [
+            { id: 'gemini-4-argon-high', label: 'Argon Lead', agent: 'agy' },
+            { id: 'gemini-3.8-flash-high', label: 'Flash High', agent: 'agy' },
+          ],
+          recommendedFlash: 'gemini-3.8-flash-high',
+          recommendedLead: 'gemini-4-argon-high',
+        };
+      }
+      if (method === 'persona.list') return { personas: [] };
+      calls.push([method, params]);
+      return info({ name: 'A', args: ['--model', 'gemini-3.8-flash-high'] });
+    };
+    const onClose = vi.fn();
+    render(<EditTerminalDialog name="A" api={api} onClose={onClose} />);
+    const flashBtn = await screen.findByRole('button', { name: /⚡ Flash Atual/i });
+    fireEvent.click(flashBtn);
+    const modelInput = screen.getByTestId('edit-terminal-model') as HTMLInputElement;
+    expect(modelInput.value).toBe('gemini-3.8-flash-high');
   });
 });
 

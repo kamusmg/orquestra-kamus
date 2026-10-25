@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { homedir } from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   isHostMethod,
   OrqError,
@@ -29,6 +31,8 @@ import {
   type TerminalInfo,
   type Workspace,
   type HostCommand,
+  type ModelEntry,
+  type ModelListResult,
 } from '@orquestra/shared';
 import {
   createOrquestra,
@@ -45,6 +49,7 @@ import {
   saveWorkspace,
   SettingsStore,
   WorkspaceSaver,
+  resolveExecutable,
   type AgentAdapter,
   type Logger,
   type Note,
@@ -115,6 +120,139 @@ export type UsageState = {
   pending: Map<string, Promise<SubscriptionUsage>>;
   failures: Map<string, { retryAt: number; message: string }>;
 };
+
+const execFileAsync = promisify(execFile);
+
+const MODEL_CACHE_TTL_MS = 10 * 60 * 1000;
+let cachedModels: ModelListResult | null = null;
+let lastModelFetch = 0;
+
+export const FALLBACK_AGY_MODELS: ModelEntry[] = [
+  { id: 'gemini-4-argon-high', label: 'Gemini 4 Argon (High)', agent: 'agy' },
+  { id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)', agent: 'agy' },
+  { id: 'gemini-3.8-flash-medium', label: 'Gemini 3.8 Flash (Medium)', agent: 'agy' },
+  { id: 'claude-opus-5-5-high', label: 'Claude Opus 5.5 (High)', agent: 'agy' },
+  { id: 'claude-sonnet-5-5-high', label: 'Claude Sonnet 5.5 (High)', agent: 'agy' },
+];
+
+export const CLAUDE_NATIVE_MODELS: ModelEntry[] = [
+  { id: 'opus', label: 'Claude Opus ( Sempre o mais recente )', agent: 'claude' },
+  { id: 'sonnet', label: 'Claude Sonnet ( Sempre o mais recente )', agent: 'claude' },
+];
+
+export function extractModelVersion(id: string): number {
+  const dotMatch = id.match(/(\d+(?:\.\d+)?)/);
+  if (dotMatch && dotMatch[1]) {
+    const dashMatch = id.match(/(\d+)-(\d+)/);
+    if (dashMatch && dashMatch[1] && dashMatch[2] && !id.includes('.')) {
+      return parseFloat(`${dashMatch[1]}.${dashMatch[2]}`);
+    }
+    return parseFloat(dotMatch[1]);
+  }
+  return 0;
+}
+
+export async function discoverModels(refresh = false): Promise<ModelListResult> {
+  if (!refresh && cachedModels && Date.now() - lastModelFetch < MODEL_CACHE_TTL_MS) {
+    return cachedModels;
+  }
+
+  let agyModels: ModelEntry[] = [];
+  try {
+    const resolved = resolveExecutable('agy');
+    const { stdout } = await execFileAsync(resolved.file, [...resolved.argsPrefix, 'models'], {
+      timeout: 8000,
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    const lines = stdout.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('Fetching')) continue;
+      const tabIndex = trimmed.indexOf('\t');
+      if (tabIndex !== -1) {
+        const id = trimmed.slice(0, tabIndex).trim();
+        const label = trimmed.slice(tabIndex + 1).trim();
+        if (id && label) {
+          agyModels.push({ id, label, agent: 'agy' });
+        }
+      }
+    }
+  } catch {
+    agyModels = [];
+  }
+
+  if (agyModels.length === 0) {
+    agyModels = [...FALLBACK_AGY_MODELS];
+  }
+
+  const allModels: ModelEntry[] = [...agyModels, ...CLAUDE_NATIVE_MODELS];
+
+  const flashWithHigh = agyModels.filter((m) => {
+    const lower = m.id.toLowerCase();
+    return lower.includes('flash') && lower.includes('high');
+  });
+  const flashCandidates = flashWithHigh.length > 0
+    ? flashWithHigh
+    : agyModels.filter((m) => m.id.toLowerCase().includes('flash'));
+
+  flashCandidates.sort((a, b) => extractModelVersion(b.id) - extractModelVersion(a.id));
+  const recommendedFlash = flashCandidates[0]?.id ?? null;
+
+  const leadGoogleHigh = agyModels.filter((m) => {
+    const lower = m.id.toLowerCase();
+    return (
+      lower.includes('argon-high') ||
+      lower.includes('pro-high') ||
+      (lower.startsWith('gemini') && lower.includes('high') && !lower.includes('flash'))
+    );
+  });
+  const leadCandidates = leadGoogleHigh.length > 0
+    ? leadGoogleHigh
+    : agyModels.filter((m) => {
+        const lower = m.id.toLowerCase();
+        return lower.includes('argon') || lower.includes('pro') || (lower.includes('high') && !lower.includes('flash'));
+      });
+
+  leadCandidates.sort((a, b) => extractModelVersion(b.id) - extractModelVersion(a.id));
+  const recommendedLead = leadCandidates[0]?.id ?? null;
+
+  cachedModels = {
+    models: allModels,
+    recommendedFlash,
+    recommendedLead,
+  };
+  lastModelFetch = Date.now();
+  return cachedModels;
+}
+
+export function resolveAutoModelArgs(
+  args: string[] | undefined,
+  flashModel: string,
+  leadModel: string,
+): string[] | undefined {
+  if (!args) return undefined;
+  const result = [...args];
+  for (let i = 0; i < result.length; i++) {
+    const current = result[i];
+    if (current === '--model' && i + 1 < result.length) {
+      const next = result[i + 1]?.toLowerCase();
+      if (next === 'auto-flash' || next === 'latest-flash') {
+        result[i + 1] = flashModel;
+      } else if (next === 'auto-lead' || next === 'latest-lead') {
+        result[i + 1] = leadModel;
+      }
+    } else if (current && current.startsWith('--model=')) {
+      const val = current.slice('--model='.length).toLowerCase();
+      if (val === 'auto-flash' || val === 'latest-flash') {
+        result[i] = `--model=${flashModel}`;
+      } else if (val === 'auto-lead' || val === 'latest-lead') {
+        result[i] = `--model=${leadModel}`;
+      }
+    }
+  }
+  return result;
+}
 
 export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBridge> {
   let orquestra: Orquestra;
@@ -302,12 +440,16 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       const authorRect = current.state.rectOf(caller) ?? { x: 80, y: 80, ...TERMINAL_SIZE };
       const rect = { ...placeBeside(authorRect, Object.values(current.state.layout()), TERMINAL_SIZE), ...TERMINAL_SIZE };
       const effectiveCwd = params.floor ? floorDirectory(current.dir, params.floor) : params.cwd;
+      const { recommendedFlash, recommendedLead } = await discoverModels();
+      const effectiveFlash = recommendedFlash ?? 'gemini-3.8-flash-high';
+      const effectiveLead = recommendedLead ?? 'gemini-4-argon-high';
+      const resolvedArgs = resolveAutoModelArgs(params.args, effectiveFlash, effectiveLead);
       const session = await createTerminalFor({
         name: params.name,
         agent: params.agent,
         cwd: effectiveCwd,
         resume: params.resume,
-        args: params.args,
+        args: resolvedArgs,
         regente: false,
         persona: params.persona,
       });
@@ -713,9 +855,13 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       if (agent === 'shell' && persona) {
         throw new OrqError('USAGE', 'O shell não recebe funções.');
       }
+      const { recommendedFlash, recommendedLead } = await discoverModels();
+      const effectiveFlash = recommendedFlash ?? 'gemini-3.8-flash-high';
+      const effectiveLead = recommendedLead ?? 'gemini-4-argon-high';
+      const resolvedArgs = resolveAutoModelArgs(args, effectiveFlash, effectiveLead);
       const resolvedPersona = persona ? resolvePersona(persona) : undefined;
       const placement = groupId ? prepareGroupedNode(groupId, 'terminal', name) : undefined;
-      const session = await createTerminalFor({ id: placement?.id, name, agent, cwd, resume, args, regente, persona, monitor });
+      const session = await createTerminalFor({ id: placement?.id, name, agent, cwd, resume, args: resolvedArgs, regente, persona, monitor });
       if (placement && groupId) {
         requireProject().state.place(name, placement.rect);
         requireProject().state.grouping.assign(groupId, [{ kind: 'terminal', id: session.id }], groupElements());
@@ -742,6 +888,12 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
         if (changes.persona && changes.persona !== before?.persona) {
           resolvedPersona = resolvePersona(changes.persona);
         }
+      }
+      if (changes.args !== undefined) {
+        const { recommendedFlash, recommendedLead } = await discoverModels();
+        const effectiveFlash = recommendedFlash ?? 'gemini-3.8-flash-high';
+        const effectiveLead = recommendedLead ?? 'gemini-4-argon-high';
+        changes.args = resolveAutoModelArgs(changes.args, effectiveFlash, effectiveLead);
       }
       if (changes.agent === 'agy' && before?.agent !== 'agy') {
         const result = await ensureAgyGlobalHook({
@@ -958,6 +1110,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       }
       return {};
     },
+    'models.list': async ({ refresh }) => discoverModels(Boolean(refresh)),
   };
 
   async function handle(message: Exclude<MainToHost, { kind: 'shutdown' }> | HostCommand | string): Promise<unknown> {
@@ -971,6 +1124,52 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       try {
         const result = await (async () => {
           switch (cmd.type) {
+            case 'list-models':
+              return discoverModels(Boolean(cmd.refresh));
+            case 'create-terminal': {
+              const current = requireProject();
+              if (cmd.agent === 'shell' && cmd.persona) {
+                throw new OrqError('USAGE', 'O shell não recebe funções.');
+              }
+              const resolvedPersona = cmd.persona ? resolvePersona(cmd.persona) : undefined;
+              const anchorRect = cmd.connectTo
+                ? (current.state.rectOf(cmd.connectTo) ?? { x: 80, y: 80, ...TERMINAL_SIZE })
+                : { x: 80, y: 80, ...TERMINAL_SIZE };
+              const rect = { ...placeBeside(anchorRect, Object.values(current.state.layout()), TERMINAL_SIZE), ...TERMINAL_SIZE };
+              const { recommendedFlash, recommendedLead } = await discoverModels();
+              const effectiveFlash = recommendedFlash ?? 'gemini-3.8-flash-high';
+              const effectiveLead = recommendedLead ?? 'gemini-4-argon-high';
+              const resolvedArgs = resolveAutoModelArgs(cmd.args, effectiveFlash, effectiveLead);
+              const session = await createTerminalFor({
+                name: cmd.name,
+                agent: cmd.agent,
+                cwd: cmd.cwd,
+                resume: true,
+                args: resolvedArgs,
+                regente: Boolean(cmd.regente),
+                persona: cmd.persona,
+              });
+              current.state.place(cmd.name, rect);
+              if (cmd.connectTo) {
+                orquestra.connect(cmd.connectTo, cmd.name);
+              }
+              if (resolvedPersona) {
+                orquestra.brief(session.name, cmd.connectTo ?? 'Orquestra', personaBrief(resolvedPersona, { regent: Boolean(cmd.regente) }));
+              } else if (cmd.regente) {
+                orquestra.brief(session.name, 'Orquestra', regentGuide());
+              }
+              changed();
+              opts.send({
+                kind: 'event',
+                event: {
+                  type: 'terminal.added',
+                  info: info(session),
+                  rect,
+                  connectedTo: cmd.connectTo ?? null,
+                },
+              });
+              return info(session);
+            }
             case 'unload-idle-terminals': {
               const unloaded = await orq().unloadIdleTerminals();
               return { unloaded };

@@ -8,7 +8,7 @@ import { silentLogger } from '../../core/src/log.js';
 import { createFakeAdapter } from '../../core/test/helpers/fake-adapter.js';
 import { FakePtyHost } from '../../core/test/helpers/fake-pty-host.js';
 import { waitFor } from '../../core/test/helpers/wait.js';
-import { startHostBridge } from '../src/bridge.js';
+import { startHostBridge, extractModelVersion, resolveAutoModelArgs } from '../src/bridge.js';
 import { startControlPipeServer, type ControlPipeServer, type Bridge } from '../src/control-pipe.js';
 
 describe('Control Pipe Server', () => {
@@ -199,6 +199,40 @@ describe('Control Pipe Server', () => {
     expect(listRes.ok).toBe(true);
     expect(listRes.result.workspaces).toHaveLength(1);
 
+    // Test list-models
+    const modelsRes = await sendCommand(pipePath, { id: 35, type: 'list-models' });
+    expect(modelsRes).toMatchObject({
+      id: 35,
+      ok: true,
+      result: {
+        models: expect.arrayContaining([
+          expect.objectContaining({ agent: 'agy' }),
+          expect.objectContaining({ agent: 'claude' }),
+        ]),
+        recommendedFlash: expect.any(String),
+        recommendedLead: expect.any(String),
+      },
+    });
+
+    // Test create-terminal via Control Pipe
+    const createRes = await sendCommand(pipePath, {
+      id: 36,
+      type: 'create-terminal',
+      name: 'pipe-created',
+      agent: 'claude',
+      args: ['--model', 'auto-flash', '--dangerously-skip-permissions'],
+      connectTo: 'worker',
+    });
+    expect(createRes).toMatchObject({
+      id: 36,
+      ok: true,
+      result: {
+        name: 'pipe-created',
+        agent: 'claude',
+        args: expect.arrayContaining([modelsRes.result.recommendedFlash]),
+      },
+    });
+
     // Test update-terminal (agent hot-swap from claude to agy)
     const updateRes = await sendCommand(pipePath, {
       id: 30,
@@ -217,12 +251,39 @@ describe('Control Pipe Server', () => {
 
     // Test unload-idle-terminals
     const unloadRes = await sendCommand(pipePath, { id: 40, type: 'unload-idle-terminals' });
-    expect(unloadRes).toMatchObject({
-      id: 40,
-      ok: true,
-      result: { unloaded: ['worker'] },
-    });
+    expect(unloadRes.ok).toBe(true);
+    expect(unloadRes.result.unloaded).toEqual(expect.arrayContaining(['worker', 'pipe-created']));
 
     await bridge.close();
+  });
+
+  it('extractModelVersion and resolveAutoModelArgs handle dynamic versioning and substitutions', () => {
+    expect(extractModelVersion('gemini-4-argon-high')).toBe(4);
+    expect(extractModelVersion('gemini-3.8-flash-high')).toBe(3.8);
+    expect(extractModelVersion('gemini-4.5-flash-high')).toBe(4.5);
+    expect(extractModelVersion('gemini-5-flash-high')).toBe(5);
+    expect(extractModelVersion('claude-opus-5-5-high')).toBe(5.5);
+
+    const flash = 'gemini-3.8-flash-high';
+    const lead = 'gemini-4-argon-high';
+
+    expect(resolveAutoModelArgs(['--model', 'auto-flash', '--other'], flash, lead)).toEqual([
+      '--model',
+      flash,
+      '--other',
+    ]);
+    expect(resolveAutoModelArgs(['--model', 'latest-lead', '--flag'], flash, lead)).toEqual([
+      '--model',
+      lead,
+      '--flag',
+    ]);
+    expect(resolveAutoModelArgs(['--model=auto-flash', '-v'], flash, lead)).toEqual([
+      `--model=${flash}`,
+      '-v',
+    ]);
+    expect(resolveAutoModelArgs(['--model=latest-lead'], flash, lead)).toEqual([
+      `--model=${lead}`,
+    ]);
+    expect(resolveAutoModelArgs(undefined, flash, lead)).toBeUndefined();
   });
 });

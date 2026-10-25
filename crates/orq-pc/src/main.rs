@@ -112,6 +112,40 @@ pub enum Commands {
         lines: usize,
     },
 
+    /// Lista os modelos disponíveis ao vivo (agy / claude) e recomendações auto-flash / auto-lead
+    Models {
+        /// Força atualização consultando `agy models` novamente
+        #[arg(long)]
+        refresh: bool,
+    },
+
+    /// Cria um novo terminal no canvas já com agente, modelo e função embutida
+    New {
+        /// Nome do novo terminal
+        name: String,
+        /// Tipo de agente (agy, claude, codex, shell)
+        #[arg(long, default_value = "agy")]
+        agent: String,
+        /// Modelo (ex: gemini-3.8-flash-high, gemini-4-argon-high, auto-flash, auto-lead, opus)
+        #[arg(long)]
+        model: Option<String>,
+        /// Função embutida (persona) para atribuir ao terminal
+        #[arg(long)]
+        persona: Option<String>,
+        /// Pasta de trabalho (opcional)
+        #[arg(long)]
+        cwd: Option<String>,
+        /// Define o terminal como Regente
+        #[arg(long)]
+        regente: bool,
+        /// Nome do terminal ou nota ao qual conectar automaticamente
+        #[arg(long)]
+        connect_to: Option<String>,
+        /// Workspace alvo (opcional)
+        #[arg(short, long)]
+        workspace: Option<String>,
+    },
+
     /// Encerra apenas a interface gráfica Electron (Orquestra.exe) liberando ~390 MB de RAM
     Headless,
 
@@ -351,6 +385,59 @@ pub fn build_list_payload() -> serde_json::Value {
         "id": 1,
         "type": "list"
     })
+}
+
+pub fn build_list_models_payload(refresh: bool) -> serde_json::Value {
+    json!({
+        "id": 1,
+        "type": "list-models",
+        "refresh": refresh
+    })
+}
+
+pub fn build_create_terminal_payload(
+    name: &str,
+    agent: &str,
+    model: Option<&str>,
+    persona: Option<&str>,
+    cwd: Option<&str>,
+    regente: bool,
+    connect_to: Option<&str>,
+    workspace: Option<&str>,
+) -> serde_json::Value {
+    let mut val = json!({
+        "id": 1,
+        "type": "create-terminal",
+        "name": name,
+        "agent": agent,
+        "regente": regente,
+    });
+
+    if let Some(m) = model {
+        if agent == "agy" || agent == "claude" {
+            val["args"] = json!(["--model", m, "--dangerously-skip-permissions"]);
+        } else {
+            val["args"] = json!(["--model", m]);
+        }
+    }
+
+    if let Some(p) = persona {
+        val["persona"] = json!(p);
+    }
+
+    if let Some(c) = cwd {
+        val["cwd"] = json!(c);
+    }
+
+    if let Some(conn) = connect_to {
+        val["connectTo"] = json!(conn);
+    }
+
+    if let Some(ws) = workspace {
+        val["workspace"] = json!(ws);
+    }
+
+    val
 }
 
 /// Extrai a resposta que corresponde ao id esperado, ignorando linhas de eventos assíncronos
@@ -705,6 +792,107 @@ fn main() {
             }
         }
 
+        Commands::Models { refresh } => {
+            let payload = build_list_models_payload(refresh);
+            match send_host_command(&pipe_path, &payload) {
+                Ok(reply) => {
+                    let result = reply.get("result").unwrap_or(&reply);
+                    let rec_flash = result
+                        .get("recommendedFlash")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("auto-flash");
+                    let rec_lead = result
+                        .get("recommendedLead")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("auto-lead");
+
+                    println!("\n╔═══════════════════════════════════════════════════════════════╗");
+                    println!("║             MODELOS DISPONÍVEIS (ORQUESTRA / AGY)             ║");
+                    println!("╚═══════════════════════════════════════════════════════════════╝");
+                    println!("  Auto-Flash (Recomendado):  {}", rec_flash);
+                    println!("  Auto-Lead  (Recomendado):  {}", rec_lead);
+                    println!("─────────────────────────────────────────────────────────────────");
+
+                    let empty_vec = vec![];
+                    let models = result
+                        .get("models")
+                        .and_then(|v| v.as_array())
+                        .unwrap_or(&empty_vec);
+
+                    if models.is_empty() {
+                        println!("  Nenhum modelo retornado pelo Host.");
+                    } else {
+                        println!("  {:<32} {:<24} {:<8}", "ID DO MODELO", "LABEL", "AGENTE");
+                        println!("  {:-<32} {:-<24} {:-<8}", "", "", "");
+                        for m in models {
+                            let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("-");
+                            let label = m.get("label").and_then(|v| v.as_str()).unwrap_or("-");
+                            let agent = m.get("agent").and_then(|v| v.as_str()).unwrap_or("-");
+                            println!("  {:<32} {:<24} {:<8}", id, label, agent);
+                        }
+                    }
+                    println!("─────────────────────────────────────────────────────────────────\n");
+                }
+                Err(e) => {
+                    eprintln!("❌ Falha ao listar modelos do Host: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        Commands::New {
+            name,
+            agent,
+            model,
+            persona,
+            cwd,
+            regente,
+            connect_to,
+            workspace: cmd_ws,
+        } => {
+            let target_ws = cmd_ws.as_deref().or(ws);
+            let payload = build_create_terminal_payload(
+                &name,
+                &agent,
+                model.as_deref(),
+                persona.as_deref(),
+                cwd.as_deref(),
+                regente,
+                connect_to.as_deref(),
+                target_ws,
+            );
+
+            match send_host_command(&pipe_path, &payload) {
+                Ok(_) => {
+                    println!("\n✨ Terminal '{}' criado com sucesso no Orquestra!", name);
+                    println!("   Agente:   {}", agent);
+                    if let Some(ref m) = model {
+                        println!("   Modelo:   {}", m);
+                    }
+                    if let Some(ref p) = persona {
+                        println!("   Função:   {}", p);
+                    }
+                    if let Some(ref c) = cwd {
+                        println!("   Pasta:    {}", c);
+                    }
+                    if regente {
+                        println!("   Regente:  sim");
+                    }
+                    if let Some(ref conn) = connect_to {
+                        println!("   Conexão:  conectado a '{}'", conn);
+                    }
+                    if let Some(w) = target_ws {
+                        println!("   Workspace: {}", w);
+                    }
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("❌ Falha ao criar terminal '{}': {e}", name);
+                    std::process::exit(1);
+                }
+            }
+        }
+
         Commands::Headless => match kill_electron_gui() {
             Ok(freed_mb) => {
                 println!(
@@ -840,6 +1028,82 @@ mod tests {
         // Shutdown payload
         let shut = build_shutdown_payload();
         assert_eq!(shut["type"], "shutdown");
+
+        // Models payload
+        let models_payload = build_list_models_payload(true);
+        assert_eq!(models_payload["id"], 1);
+        assert_eq!(models_payload["type"], "list-models");
+        assert_eq!(models_payload["refresh"], true);
+
+        // New terminal payload with agy and model
+        let new_agy = build_create_terminal_payload(
+            "executor",
+            "agy",
+            Some("gemini-3.8-flash-high"),
+            Some("Full-Stack"),
+            Some("D:\\projects"),
+            false,
+            Some("regente"),
+            Some("ws-1"),
+        );
+        assert_eq!(new_agy["type"], "create-terminal");
+        assert_eq!(new_agy["name"], "executor");
+        assert_eq!(new_agy["agent"], "agy");
+        assert_eq!(new_agy["persona"], "Full-Stack");
+        assert_eq!(new_agy["cwd"], "D:\\projects");
+        assert_eq!(new_agy["regente"], false);
+        assert_eq!(new_agy["connectTo"], "regente");
+        assert_eq!(new_agy["workspace"], "ws-1");
+        assert_eq!(
+            new_agy["args"],
+            serde_json::json!(["--model", "gemini-3.8-flash-high", "--dangerously-skip-permissions"])
+        );
+
+        // New terminal payload with claude and model
+        let new_claude = build_create_terminal_payload(
+            "regente",
+            "claude",
+            Some("opus"),
+            None,
+            None,
+            true,
+            None,
+            None,
+        );
+        assert_eq!(new_claude["regente"], true);
+        assert_eq!(
+            new_claude["args"],
+            serde_json::json!(["--model", "opus", "--dangerously-skip-permissions"])
+        );
+
+        // New terminal payload with codex and model
+        let new_codex = build_create_terminal_payload(
+            "helper",
+            "codex",
+            Some("o3-mini"),
+            None,
+            None,
+            false,
+            None,
+            None,
+        );
+        assert_eq!(
+            new_codex["args"],
+            serde_json::json!(["--model", "o3-mini"])
+        );
+
+        // New terminal without model
+        let new_plain = build_create_terminal_payload(
+            "sh",
+            "shell",
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+        );
+        assert!(new_plain.get("args").is_none());
     }
 
     #[test]

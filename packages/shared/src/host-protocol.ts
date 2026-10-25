@@ -20,6 +20,20 @@ export type HostAgent = z.infer<typeof hostAgentSchema>;
 export const agentKindSchema = hostAgentSchema;
 export type AgentKind = HostAgent;
 
+export const modelEntrySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  agent: hostAgentSchema,
+});
+export type ModelEntry = z.infer<typeof modelEntrySchema>;
+
+export const modelListResultSchema = z.object({
+  models: z.array(modelEntrySchema),
+  recommendedFlash: z.string().nullable(),
+  recommendedLead: z.string().nullable(),
+});
+export type ModelListResult = z.infer<typeof modelListResultSchema>;
+
 export const terminalChangesSchema = z.object({
   newName: terminalNameSchema.optional(),
   agent: agentKindSchema.optional(),
@@ -240,6 +254,10 @@ export const hostMethodSchemas = {
     params: z.object({ name: z.string().min(1), scope: personaScopeSchema }),
     result: empty,
   },
+  'models.list': {
+    params: z.object({ refresh: z.boolean().optional() }),
+    result: modelListResultSchema,
+  },
 } as const;
 
 export type HostMethod = keyof typeof hostMethodSchemas;
@@ -311,6 +329,8 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ id: cmdId, type: z.literal('unload-idle-terminals'), workspace: cmdWorkspace }),
   z.object({ id: cmdId, type: z.literal('ping-control') }),
   z.object({ id: cmdId, type: z.literal('list') }),
+  z.object({ id: cmdId, type: z.literal('list-models'), refresh: z.boolean().optional(), workspace: cmdWorkspace }),
+  z.object({ id: cmdId, type: z.literal('create-terminal'), name: z.string(), agent: agentKindSchema, cwd: z.string().optional(), args: z.array(z.string()).optional(), persona: z.string().optional(), regente: z.boolean().optional(), connectTo: z.string().optional(), workspace: cmdWorkspace }),
   z.object({ id: cmdId, type: z.literal('update-terminal'), name: z.string(), agent: agentKindSchema.optional(), changes: terminalChangesSchema.partial().optional(), workspace: cmdWorkspace }),
   z.object({ id: cmdId, type: z.literal('unload-terminal'), name: z.string(), workspace: cmdWorkspace }),
   z.object({ id: cmdId, type: z.literal('restart-terminal'), name: z.string(), workspace: cmdWorkspace }),
@@ -320,9 +340,11 @@ export const commandSchema = z.discriminatedUnion('type', [
 ]);
 
 export type HostCommand =
-  | { id: number; type: 'unload-idle-terminals'; workspace?: string }
-  | { id: number; type: 'ping-control' }
+  | { id: number | string; type: 'unload-idle-terminals'; workspace?: string }
+  | { id: number | string; type: 'ping-control' }
   | { id: number | string; type: 'list' }
+  | { id: number | string; type: 'list-models'; refresh?: boolean; workspace?: string }
+  | { id: number | string; type: 'create-terminal'; name: string; agent: AgentKind; cwd?: string; args?: string[]; persona?: string; regente?: boolean; connectTo?: string; workspace?: string }
   | { id: number | string; type: 'update-terminal'; name: string; agent?: AgentKind; changes?: Partial<TerminalChanges>; workspace?: string }
   | { id: number | string; type: 'unload-terminal'; name: string; workspace?: string }
   | { id: number | string; type: 'restart-terminal'; name: string; workspace?: string }

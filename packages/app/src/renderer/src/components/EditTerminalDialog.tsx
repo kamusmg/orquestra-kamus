@@ -31,6 +31,9 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
   const [argsText, setArgsText] = useState(formatArgs(view?.args ?? []));
   const [persona, setPersona] = useState<string>(view?.persona ?? '');
   const [personas, setPersonas] = useState<Array<{ name: string; scope: PersonaScope }>>([]);
+  const [liveModels, setLiveModels] = useState<Array<{ id: string; label: string; agent: string }>>([]);
+  const [recommendedFlash, setRecommendedFlash] = useState<string>('gemini-3.8-flash-high');
+  const [recommendedLead, setRecommendedLead] = useState<string>('gemini-4-argon-high');
   const [resume, setResume] = useState(view?.resume ?? true);
   const [regente, setRegente] = useState(view?.regente ?? false);
   const [monitor, setMonitor] = useState(view?.monitor ?? true);
@@ -42,6 +45,14 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
       .command('persona.list', {})
       .then((res) => setPersonas((res as { personas?: Array<{ name: string; scope: PersonaScope }> })?.personas ?? []))
       .catch(() => setPersonas([]));
+    void api
+      .command('models.list' as never, {} as never)
+      .then((res: { models?: Array<{ id: string; label: string; agent: string }>; recommendedFlash?: string | null; recommendedLead?: string | null }) => {
+        if (res?.models?.length) setLiveModels(res.models);
+        if (res?.recommendedFlash) setRecommendedFlash(res.recommendedFlash);
+        if (res?.recommendedLead) setRecommendedLead(res.recommendedLead);
+      })
+      .catch(() => {});
   }, [api]);
 
   if (!view) return null;
@@ -161,12 +172,63 @@ export function EditTerminalDialog({ name, api, onClose }: { name: string; api: 
               onChange={(e) => setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), e.target.value)))}
               disabled={submitting}
             />
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+              <button
+                type="button"
+                className="chip"
+                style={{ cursor: 'pointer', fontSize: '11px', padding: '2px 8px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.15)' }}
+                disabled={submitting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), recommendedFlash)));
+                }}
+              >
+                ⚡ Flash Atual ({recommendedFlash})
+              </button>
+              <button
+                type="button"
+                className="chip"
+                style={{ cursor: 'pointer', fontSize: '11px', padding: '2px 8px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.15)' }}
+                disabled={submitting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), recommendedLead)));
+                }}
+              >
+                🧠 Lead Atual ({recommendedLead})
+              </button>
+              <button
+                type="button"
+                className="chip"
+                style={{ cursor: 'pointer', fontSize: '11px', padding: '2px 8px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.15)' }}
+                disabled={submitting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setArgsText(formatArgs(replaceModelArg(parseArgsSafe(argsText), 'auto-flash')));
+                }}
+              >
+                🔄 Auto-Flash (sempre o mais novo)
+              </button>
+            </div>
             <datalist id="orq-known-models">
-              <option value="gemini-4-argon-high">gemini-4-argon-high (Argon Tech Lead / Revisor)</option>
-              <option value="gemini-3.8-flash-high">gemini-3.8-flash-high (Flash High Executor / NanoBanana)</option>
-              <option value="gemini-3.8-flash-medium">gemini-3.8-flash-medium (Flash Medium Econômico)</option>
-              <option value="opus">opus (Claude Opus)</option>
-              <option value="sonnet">sonnet (Claude Sonnet)</option>
+              <option value="auto-flash">auto-flash (Sempre usar o Flash High mais recente — atual: {recommendedFlash})</option>
+              <option value="auto-lead">auto-lead (Sempre usar o Lead/Argon High mais recente — atual: {recommendedLead})</option>
+              {liveModels.length > 0 ? (
+                liveModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id} ({m.label})
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="gemini-4-argon-high">gemini-4-argon-high (Argon Tech Lead / Revisor)</option>
+                  <option value="gemini-3.8-flash-high">gemini-3.8-flash-high (Flash High Executor / NanoBanana)</option>
+                  <option value="gemini-3.8-flash-medium">gemini-3.8-flash-medium (Flash Medium Econômico)</option>
+                  <option value="claude-opus-5-5-high">claude-opus-5-5-high</option>
+                  <option value="opus">opus (Claude Opus)</option>
+                  <option value="sonnet">sonnet (Claude Sonnet)</option>
+                </>
+              )}
             </datalist>
           </label>
         ) : null}

@@ -32,6 +32,10 @@ export function regentGuide(): string {
     '  orq persona show <função>                  ler as instruções atuais da função',
     '  orq persona write <função> "<novo texto>"  evoluir/refinar o prompt da função no projeto',
     '  orq brief <terminal> <função>              aplicar a função evoluída na janela (atualiza o crachá e envia o novo briefing)',
+    'Auto-atualização de Modelos Google (agy models / --model auto-flash / --model auto-lead):',
+    '  Hoje os modelos de referência são gemini-4-argon-high (Tech Lead) e gemini-3.8-flash-high (Executores).',
+    '  O Google lança novos modelos frequentemente. Você pode rodar agy models (ou orq-pc models) para listar os modelos ao vivo da sua conta.',
+    '  Ao criar novos executores via orq new, passe --args "--model auto-flash --dangerously-skip-permissions" para que o Orquestra selecione sempre a geração Flash High mais recente automaticamente.',
   ].join('\n');
 }
 
