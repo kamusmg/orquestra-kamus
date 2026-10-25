@@ -10,6 +10,7 @@ dist-pack/
 release/
 .env
 .env.*
+!.env.example
 *.local
 .vscode/
 .idea/
