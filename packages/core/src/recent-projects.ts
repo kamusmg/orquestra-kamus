@@ -26,4 +26,11 @@ export class RecentProjects {
     writeFileSync(this.opts.file, JSON.stringify(projects, null, 2));
     return projects;
   }
+
+  remove(dir: string): RecentProject[] {
+    const projects = this.list().filter((project) => project.dir.toLowerCase() !== dir.toLowerCase());
+    mkdirSync(dirname(this.opts.file), { recursive: true });
+    writeFileSync(this.opts.file, JSON.stringify(projects, null, 2));
+    return projects;
+  }
 }

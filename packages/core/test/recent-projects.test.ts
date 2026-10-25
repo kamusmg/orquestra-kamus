@@ -35,6 +35,16 @@ describe('RecentProjects', () => {
     expect(recent.list().map((project) => project.name)).toEqual(['c', 'b']);
   });
 
+  it('remove projeto pelo caminho ignorando maiúsculas e minúsculas', () => {
+    const recent = new RecentProjects({ file: file(), log: silentLogger() });
+    recent.touch('C:\\proj\\alfa');
+    recent.touch('C:\\proj\\beta');
+    expect(recent.list().map((p) => p.name)).toEqual(['beta', 'alfa']);
+    const after = recent.remove('c:\\proj\\alfa');
+    expect(after.map((p) => p.name)).toEqual(['beta']);
+    expect(recent.list().map((p) => p.name)).toEqual(['beta']);
+  });
+
   it('arquivo inválido vale lista vazia', () => {
     const path = file();
     writeFileSync(path, '[{"dir": 1}]');

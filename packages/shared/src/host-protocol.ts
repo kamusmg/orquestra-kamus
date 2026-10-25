@@ -303,6 +303,10 @@ export const hostMethodSchemas = {
     params: empty,
     result: z.object({ projects: z.array(z.object({ dir: z.string(), name: z.string(), openedAt: z.string() })) }),
   },
+  'recent.remove': {
+    params: z.object({ dir: z.string().min(1) }),
+    result: z.object({ projects: z.array(z.object({ dir: z.string(), name: z.string(), openedAt: z.string() })) }),
+  },
   'settings.get': {
     params: empty,
     result: settingsSchema,

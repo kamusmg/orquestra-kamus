@@ -1163,6 +1163,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       return {};
     },
     'recent.list': async () => ({ projects: recent.list() }),
+    'recent.remove': async ({ dir }) => ({ projects: recent.remove(dir) }),
     'settings.get': async () => settings.get(),
     'settings.update': async (next) => settings.update(next),
     'persona.list': async () => {
@@ -1252,7 +1253,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
         }
         idMap.set(t.name, name);
 
-        const termCwd = t.cwd || current.dir;
+        const termCwd = current.dir || t.cwd;
         const baseArgs = (score.settings.includeCommands && t.args) ? t.args : [];
         const args = resolveAutoModelArgs(baseArgs, effectiveFlash, effectiveLead);
         const persona = t.persona ?? undefined;

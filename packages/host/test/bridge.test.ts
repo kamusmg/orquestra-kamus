@@ -467,13 +467,15 @@ describe('workspace na ponte', () => {
     expect(await command('6', 'note.save', { name: 'plano', content: 'c', baseRevision: null })).toMatchObject({ error: { code: 'NOT_FOUND' } });
   });
 
-  it('recent.list devolve os projetos abertos, o último primeiro', async () => {
+  it('recent.list devolve os projetos abertos, o último primeiro; recent.remove remove da lista', async () => {
     const { command } = await setup();
     const a = mkdtempSync(join(tmpdir(), 'orq-proj-'));
     const b = mkdtempSync(join(tmpdir(), 'orq-proj-'));
     await command('1', 'project.open', { dir: a });
     await command('2', 'project.open', { dir: b });
     expect(await command('3', 'recent.list', {})).toMatchObject({ result: { projects: [{ dir: b }, { dir: a }] } });
+    expect(await command('4', 'recent.remove', { dir: a })).toMatchObject({ result: { projects: [{ dir: b }] } });
+    expect(await command('5', 'recent.list', {})).toMatchObject({ result: { projects: [{ dir: b }] } });
   });
 });
 
