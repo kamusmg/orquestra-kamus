@@ -129,6 +129,9 @@ describe('Control Pipe Server', () => {
   });
 
   it('integrates with real HostBridge for ping-control, list, unload-idle-terminals, and update-terminal', async () => {
+    const originalCerebro = process.env.ORQ_CEREBRO_PATH;
+    process.env.ORQ_CEREBRO_PATH = '';
+    try {
     const pipePath = process.platform === 'win32'
       ? `\\\\.\\pipe\\orquestra-ctrl-test-${randomUUID()}`
       : `/tmp/orquestra-ctrl-test-${randomUUID()}.sock`;
@@ -255,6 +258,13 @@ describe('Control Pipe Server', () => {
     expect(unloadRes.result.unloaded).toEqual(expect.arrayContaining(['worker', 'pipe-created']));
 
     await bridge.close();
+    } finally {
+      if (originalCerebro === undefined) {
+        delete process.env.ORQ_CEREBRO_PATH;
+      } else {
+        process.env.ORQ_CEREBRO_PATH = originalCerebro;
+      }
+    }
   });
 
   it('extractModelVersion and resolveAutoModelArgs handle dynamic versioning and substitutions', () => {
