@@ -1000,13 +1000,20 @@ fn main() {
                 let asar_new = r"D:\projetos D\orquestra\packages\app\release\win-unpacked\resources\app.asar.new";
                 let asar_target = r"D:\projetos D\orquestra\packages\app\release\win-unpacked\resources\app.asar";
                 if std::path::Path::new(asar_new).exists() {
-                    for _ in 0..10 {
+                    for _ in 0..15 {
                         let _ = std::fs::remove_file(asar_target);
                         if std::fs::rename(asar_new, asar_target).is_ok() {
                             break;
                         }
                         std::thread::sleep(std::time::Duration::from_millis(300));
                     }
+                }
+
+                let unpacked_new = r"D:\projetos D\orquestra\packages\app\release\win-unpacked\resources\app.asar.new.unpacked";
+                let unpacked_target = r"D:\projetos D\orquestra\packages\app\release\win-unpacked\resources\app.asar.unpacked";
+                if std::path::Path::new(unpacked_new).exists() {
+                    let _ = std::fs::remove_dir_all(unpacked_target);
+                    let _ = std::fs::rename(unpacked_new, unpacked_target);
                 }
 
                 let _ = launch_gui_with_opts(true);
