@@ -12,7 +12,7 @@
 
 ---
 
-## 🎖️ Agradecimentos e Créditos ao Kern (Criador Original do Orquestra)
+## 🙏 Agradecimentos e Créditos ao Criador Original
 
 Este projeto é um fork customizado e expandido do [**Orquestra**](https://github.com/engfabiopeixoto/orquestra), idealizado, arquitetado e desenvolvido originalmente por **Fábio Peixoto (Kern)** ([@engfabiopeixoto](https://github.com/engfabiopeixoto)).
 

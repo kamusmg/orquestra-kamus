@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { release as osRelease } from 'node:os';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, shell } from 'electron';
@@ -298,7 +298,64 @@ async function getClipboardImageBuffer(): Promise<Buffer | null> {
   return null;
 }
 
+async function cleanupClipboardDir(options: { wipeAll?: boolean; maxAgeMs?: number; keepCount?: number } = {}): Promise<void> {
+  const clipDir = join(dataDir, 'clipboard');
+  try {
+    const entries = await readdir(clipDir);
+    if (entries.length === 0) return;
+
+    if (options.wipeAll) {
+      await Promise.all(
+        entries.map(async (name) => {
+          try {
+            await unlink(join(clipDir, name));
+          } catch {
+            // Ignora arquivos bloqueados
+          }
+        }),
+      );
+      return;
+    }
+
+    const maxAgeMs = options.maxAgeMs ?? 10 * 60 * 1000;
+    const keepCount = options.keepCount ?? 3;
+    const now = Date.now();
+
+    const fileStats = await Promise.all(
+      entries.map(async (name) => {
+        const fullPath = join(clipDir, name);
+        try {
+          const s = await stat(fullPath);
+          return { name, fullPath, mtimeMs: s.mtimeMs };
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const validFiles = fileStats.filter((f): f is { name: string; fullPath: string; mtimeMs: number } => f !== null);
+    validFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    for (const [i, file] of validFiles.entries()) {
+      const isOlderThanLimit = now - file.mtimeMs > maxAgeMs;
+      const isBeyondKeepCount = i >= keepCount;
+      if (isOlderThanLimit || isBeyondKeepCount) {
+        try {
+          await unlink(file.fullPath);
+        } catch {
+          // Ignora se o arquivo estiver bloqueado
+        }
+      }
+    }
+  } catch {
+    // Pasta pode não existir ainda
+  }
+}
+
 async function readAndSaveClipboardImage(): Promise<string | null> {
+  // Auto-limpeza preventiva: apaga prints com mais de 10 min e mantém apenas os 3 mais recentes
+  void cleanupClipboardDir({ maxAgeMs: 10 * 60 * 1000, keepCount: 3 });
+
   const clipDir = join(dataDir, 'clipboard');
   await mkdir(clipDir, { recursive: true });
   const filePath = join(clipDir, `clip-${Date.now()}.png`);
@@ -339,6 +396,7 @@ ipcMain.handle('orq:clipboard-read-image', async (): Promise<string | null> => {
 });
 
 ipcMain.handle('orq:save-dropped-file', async (_event, payload: { name: string; data: Uint8Array }): Promise<string> => {
+  void cleanupClipboardDir({ maxAgeMs: 10 * 60 * 1000, keepCount: 3 });
   const rawName = typeof payload?.name === 'string' && payload.name.trim().length > 0 ? payload.name : 'dropped-file';
   const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '_');
   const clipDir = join(dataDir, 'clipboard');
@@ -368,6 +426,7 @@ if (!app.requestSingleInstanceLock()) {
     window.focus();
   });
   void app.whenReady().then(async () => {
+    void cleanupClipboardDir({ wipeAll: true });
     app.setAppUserModelId(appUserModelId(app.isPackaged));
     // Ctrl+R, Ctrl+Shift+I e afins pertencem ao terminal: sem barra de menu, nenhum acelerador do Electron interfere.
     Menu.setApplicationMenu(null);
@@ -390,6 +449,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on('before-quit', () => {
     portalSystem?.dispose();
+    void cleanupClipboardDir({ wipeAll: true });
   });
   app.on('window-all-closed', () => app.quit());
 }
