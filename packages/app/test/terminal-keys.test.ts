@@ -16,9 +16,15 @@ describe('terminalKeyAction', () => {
     expect(terminalKeyAction(key('KeyV', { ctrlKey: true, shiftKey: true }), true)).toBe('paste');
   });
 
-  it('Alt+V segue para o agente (o Claude Code cola imagem com ele no Windows)', () => {
-    expect(terminalKeyAction(key('KeyV', { altKey: true }), false)).toBe('pass');
+  it('Alt+V isolado aciona paste-image (salva imagem da área de transferência e cola o caminho no terminal)', () => {
+    expect(terminalKeyAction(key('KeyV', { altKey: true }), false)).toBe('paste-image');
+    expect(terminalKeyAction(key('KeyV', { altKey: true, shiftKey: false, ctrlKey: false }), true)).toBe('paste-image');
+  });
+
+  it('Alt+V com outros modificadores (Ctrl ou Shift) segue para o agente sem disparar paste-image', () => {
     expect(terminalKeyAction(key('KeyV', { ctrlKey: true, altKey: true }), false)).toBe('pass');
+    expect(terminalKeyAction(key('KeyV', { shiftKey: true, altKey: true }), false)).toBe('pass');
+    expect(terminalKeyAction(key('KeyV', { ctrlKey: true, shiftKey: true, altKey: true }), false)).toBe('pass');
   });
 
   it('Ctrl+C copia só com seleção; sem seleção é a interrupção do agente', () => {
@@ -29,6 +35,7 @@ describe('terminalKeyAction', () => {
 
   it('só o keydown decide; as outras fases e as demais teclas passam', () => {
     expect(terminalKeyAction(key('KeyV', { ctrlKey: true }, 'keyup'), false)).toBe('pass');
+    expect(terminalKeyAction(key('KeyV', { altKey: true }, 'keyup'), false)).toBe('pass');
     expect(terminalKeyAction(key('KeyR', { ctrlKey: true }), false)).toBe('pass');
     expect(terminalKeyAction(key('KeyI', { ctrlKey: true, shiftKey: true }), false)).toBe('pass');
   });

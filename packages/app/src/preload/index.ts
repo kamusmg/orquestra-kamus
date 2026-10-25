@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { HostEvent } from '@orquestra/shared';
 import type { AppInfo, CommandResponse, OrquestraBridge } from '../shared/bridge';
 import { PORTAL_IPC, type PortalEvent } from '../shared/portal-protocol';
@@ -27,6 +27,16 @@ const bridge: OrquestraBridge = {
   // O Electron 44 não expõe o clipboard no preload: a leitura e a escrita passam pelo principal.
   readClipboard: () => ipcRenderer.invoke('orq:clipboard-read') as Promise<string>,
   writeClipboard: (text) => ipcRenderer.invoke('orq:clipboard-write', text) as Promise<void>,
+  readClipboardImage: () => ipcRenderer.invoke('orq:clipboard-read-image') as Promise<string | null>,
+  saveDroppedFile: (name: string, data: Uint8Array) =>
+    ipcRenderer.invoke('orq:save-dropped-file', { name, data }) as Promise<string>,
+  getPathForFile: (file: File) => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return '';
+    }
+  },
   onFocusTerminal: (listener) => {
     const handler = (_event: IpcRendererEvent, name: string, workspaceId?: string) => listener(name, workspaceId);
     ipcRenderer.on('orq:focus-terminal', handler);

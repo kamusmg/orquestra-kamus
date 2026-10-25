@@ -52,7 +52,45 @@ function cellHeightOf(term: Terminal): number {
   return screen && term.rows > 0 ? screen.clientHeight / term.rows : 0;
 }
 
-function TerminalBody({ name, readOnly }: { name: string; readOnly: boolean }) {
+function formatFilePath(filePath: string): string {
+  const trimmed = filePath.trim();
+  if (trimmed.includes(' ') && !trimmed.startsWith('"') && !trimmed.startsWith("'")) {
+    return `"${trimmed}"`;
+  }
+  return trimmed;
+}
+
+async function resolveDropFilePaths(files: File[]): Promise<string[]> {
+  const paths: string[] = [];
+  for (const file of files) {
+    let resolved = window.orquestra.getPathForFile(file);
+    if (!resolved && (file as unknown as { path?: string }).path) {
+      resolved = (file as unknown as { path: string }).path;
+    }
+    if (!resolved && file.size > 0) {
+      try {
+        const buffer = await file.arrayBuffer();
+        resolved = await window.orquestra.saveDroppedFile(file.name, new Uint8Array(buffer));
+      } catch {
+        // Falha silenciosa ao salvar buffer de arquivo arrastado
+      }
+    }
+    if (resolved) {
+      paths.push(formatFilePath(resolved));
+    }
+  }
+  return paths;
+}
+
+function TerminalBody({
+  name,
+  readOnly,
+  onAttachTerm,
+}: {
+  name: string;
+  readOnly: boolean;
+  onAttachTerm?: (term: Terminal | null) => void;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const readOnlyRef = useRef(readOnly);
@@ -70,7 +108,8 @@ function TerminalBody({ name, readOnly }: { name: string; readOnly: boolean }) {
       theme: { background: '#161a21', foreground: '#d6dae2', cursor: '#f2a33a', selectionBackground: '#f2a33a55' },
     });
     termRef.current = term;
-    muteTerminalReplies(term);
+    onAttachTerm?.(term);
+    if (term.parser) muteTerminalReplies(term);
     // Só nos testes de ponta a ponta: deixa o teste ler o que a interface desenhou.
     if (window.orquestra.testProject) (window.__orqTerms ??= {})[name] = term;
     const fit = new FitAddon();
@@ -86,14 +125,32 @@ function TerminalBody({ name, readOnly }: { name: string; readOnly: boolean }) {
       term.clearSelection();
     };
     // term.paste usa colagem delimitada quando o agente pede: o texto chega como colagem, não como digitação.
-    const pasteClipboard = () => { if (!readOnlyRef.current) void window.orquestra.readClipboard().then((text) => { if (!readOnlyRef.current) term.paste(text); }); };
+    const pasteClipboard = () => {
+      if (readOnlyRef.current) return;
+      void window.orquestra.readClipboard().then((text) => {
+        if (readOnlyRef.current || !text) return;
+        term.paste(text);
+      });
+    };
+    const pasteImageClipboard = () => {
+      if (readOnlyRef.current) return;
+      void window.orquestra.readClipboardImage().then((imagePath) => {
+        if (readOnlyRef.current || !imagePath) return;
+        term.paste(formatFilePath(imagePath) + ' ');
+      });
+    };
     term.attachCustomKeyEventHandler((event) => {
       const action = terminalKeyAction(event, term.hasSelection());
       if (action === 'pass') return true;
       // Sem isto o navegador dispararia a própria colagem e o texto chegaria duas vezes.
       event.preventDefault();
-      if (action === 'copy') copySelection();
-      else pasteClipboard();
+      if (action === 'copy') {
+        copySelection();
+      } else if (action === 'paste-image') {
+        pasteImageClipboard();
+      } else {
+        pasteClipboard();
+      }
       return false;
     });
     // Clique direito, como no Windows Terminal: copia a seleção ou, sem seleção, cola.
@@ -130,24 +187,25 @@ function TerminalBody({ name, readOnly }: { name: string; readOnly: boolean }) {
     });
 
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const observer = new ResizeObserver(() => {
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => {
       clearTimeout(timer);
       timer = setTimeout(() => {
         fit.fit();
         void api.command('terminal.resize', { name, cols: term.cols, rows: term.rows }).catch(() => {});
       }, RESIZE_DEBOUNCE_MS);
-    });
-    observer.observe(host.current!);
+    }) : null;
+    observer?.observe(host.current!);
 
     return () => {
       clearTimeout(timer);
-      observer.disconnect();
+      observer?.disconnect();
       detach();
       term.textarea?.removeEventListener('focus', onFocus);
       term.textarea?.removeEventListener('blur', onBlur);
       host.current?.removeEventListener('contextmenu', onContextMenu);
       hostElement.removeEventListener('wheel', onWheel, { capture: true });
       if (window.__orqTerms?.[name] === term) delete window.__orqTerms[name];
+      onAttachTerm?.(null);
       term.dispose();
     };
   }, [name]);
@@ -183,6 +241,9 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
   const { zoom } = useViewport();
   const { getNode, setCenter } = useReactFlow();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounter = useRef(0);
+  const termRef = useRef<Terminal | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menu) return;
@@ -210,6 +271,58 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
       setFocus: (focus) => appStore.getState().setFocus(focus),
       sizeOf: (terminal) => appStore.getState().terminals[terminal]?.size,
     });
+  };
+
+  const onDragEnter = (event: React.DragEvent) => {
+    event.preventDefault();
+    dragCounter.current += 1;
+    if (event.dataTransfer?.types?.includes('Files')) {
+      setIsDragOver(true);
+    }
+  };
+
+  const onDragOver = (event: React.DragEvent) => {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const onDragLeave = (event: React.DragEvent) => {
+    event.preventDefault();
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setIsDragOver(false);
+    }
+  };
+
+  const onDrop = async (event: React.DragEvent) => {
+    event.preventDefault();
+    dragCounter.current = 0;
+    setIsDragOver(false);
+    if (readOnly) return;
+
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) {
+      const paths = await resolveDropFilePaths(files);
+      if (paths.length === 0) return;
+      const text = paths.join(' ') + ' ';
+      if (termRef.current) {
+        termRef.current.paste(text);
+      } else {
+        void api.command('terminal.input', { name: data.name, data: text }).catch(() => {});
+      }
+      return;
+    }
+
+    const plainText = event.dataTransfer.getData('text/plain');
+    if (!plainText) return;
+    if (termRef.current) {
+      termRef.current.paste(plainText);
+    } else {
+      void api.command('terminal.input', { name: data.name, data: plainText }).catch(() => {});
+    }
   };
 
   return (
@@ -241,7 +354,13 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
         }}
       />
       <NodeConnectors />
-      <div className={`term-node frame-${view.state} ${selected ? 'is-selected' : ''} ${view.locked ? 'is-locked nopan' : ''}`}>
+      <div
+        className={`term-node frame-${view.state} ${selected ? 'is-selected' : ''} ${view.locked ? 'is-locked nopan' : ''} ${isDragOver ? 'is-drag-over' : ''}`}
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={(e) => void onDrop(e)}
+      >
         {view.state === 'waiting' ? <span className="waiting-badge" data-testid={`terminal-waiting-${data.name}`}>👋 aguardando você</span> : null}
         <header className="term-hd" data-testid={`terminal-header-${data.name}`} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openMenu(event.clientX, event.clientY); }}>
           <span className="term-name">{view.name}</span>
@@ -273,8 +392,13 @@ export function TerminalNode({ id, data, selected }: NodeProps<TerminalFlowNode>
         {view.notice ? <div className="term-notice">{view.notice}</div> : null}
         {AGENT_FLOW_IO ? <TerminalFlowPorts name={data.name} /> : null}
         <div className="term-display">
+          {isDragOver && !readOnly ? (
+            <div className="term-drop-overlay nodrag nopan" data-testid={`terminal-drop-overlay-${data.name}`}>
+              <span>Solte para colar o caminho</span>
+            </div>
+          ) : null}
           {view.unloaded ? <div className="terminal-unloaded nodrag nopan" data-testid={`terminal-unloaded-${data.name}`}><span>Agente parado</span><button onClick={() => void reload()}>Recarregar terminal</button></div> : <>
-            <div className={view.blurred ? 'term-content is-blurred' : 'term-content'}><NodeErrorBoundary name={data.name}><TerminalBody key={view.epoch} name={data.name} readOnly={readOnly} /></NodeErrorBoundary></div>
+            <div className={view.blurred ? 'term-content is-blurred' : 'term-content'}><NodeErrorBoundary name={data.name}><TerminalBody key={view.epoch} name={data.name} readOnly={readOnly} onAttachTerm={(term) => { termRef.current = term; }} /></NodeErrorBoundary></div>
             {view.blurred ? <div className="terminal-privacy nodrag nopan"><span>Conteúdo desfocado</span><button onClick={() => void api.command('terminal.presentation', { name: data.name, blurred: false }).then(() => appStore.getState().setTerminalPresentation(data.name, { blurred: false })).catch((error: Error) => appStore.getState().notify('error', error.message))}>Mostrar conteúdo</button></div> : null}
           </>}
         </div>

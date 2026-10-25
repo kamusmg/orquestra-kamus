@@ -1,6 +1,7 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { release as osRelease } from 'node:os';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, shell } from 'electron';
 import { AGENT_PID_FILE, isHostMethod, OrqError } from '@orquestra/shared';
 import type { AppInfo, CommandResponse } from '../shared/bridge';
 import { ActivityMonitor } from './activity';
@@ -224,7 +225,83 @@ ipcMain.handle('orq:pick-folder', async () => {
   return result.canceled ? null : (result.filePaths[0] ?? null);
 });
 
-ipcMain.handle('orq:clipboard-read', () => clipboard.readText());
+async function getClipboardImageBuffer(): Promise<Buffer | null> {
+  const legacyClip = clipboard as unknown as { readImage?: () => Electron.NativeImage };
+  if (typeof legacyClip.readImage === 'function') {
+    const img = legacyClip.readImage();
+    if (img && !img.isEmpty()) {
+      return img.toPNG();
+    }
+  }
+
+  if (typeof clipboard.read === 'function') {
+    try {
+      const items = await clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          if (blob instanceof Blob) {
+            const arr = await blob.arrayBuffer();
+            const buf = Buffer.from(arr);
+            if (buf.length > 0) {
+              const nat = nativeImage.createFromBuffer(buf);
+              return nat.isEmpty() ? buf : nat.toPNG();
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignora falhas de leitura
+    }
+  }
+
+  return null;
+}
+
+async function saveClipboardPng(buffer: Buffer): Promise<string> {
+  const clipDir = join(dataDir, 'clipboard');
+  await mkdir(clipDir, { recursive: true });
+  const filePath = join(clipDir, `clip-${Date.now()}.png`);
+  await writeFile(filePath, buffer);
+  return filePath;
+}
+
+ipcMain.handle('orq:clipboard-read', async () => {
+  const text = await clipboard.readText();
+  if (text && text.trim().length > 0) return text;
+  const imageBuf = await getClipboardImageBuffer();
+  if (imageBuf) {
+    try {
+      return await saveClipboardPng(imageBuf);
+    } catch (err) {
+      log.error({ err }, 'falha ao salvar imagem da área de transferência');
+    }
+  }
+  return text;
+});
+
+ipcMain.handle('orq:clipboard-read-image', async (): Promise<string | null> => {
+  const imageBuf = await getClipboardImageBuffer();
+  if (!imageBuf) return null;
+  try {
+    return await saveClipboardPng(imageBuf);
+  } catch (err) {
+    log.error({ err }, 'falha ao salvar imagem do clipboard-read-image');
+    return null;
+  }
+});
+
+ipcMain.handle('orq:save-dropped-file', async (_event, payload: { name: string; data: Uint8Array }): Promise<string> => {
+  const rawName = typeof payload?.name === 'string' && payload.name.trim().length > 0 ? payload.name : 'dropped-file';
+  const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const clipDir = join(dataDir, 'clipboard');
+  await mkdir(clipDir, { recursive: true });
+  const filePath = join(clipDir, `${Date.now()}-${safeName}`);
+  const data = payload?.data instanceof Uint8Array ? payload.data : Buffer.from(payload?.data ?? []);
+  await writeFile(filePath, Buffer.from(data));
+  return filePath;
+});
 ipcMain.handle('orq:subscription-open', async (_event, provider: unknown) => {
   const urls = { claude: 'https://claude.ai/settings/usage', agy: 'https://one.google.com/', codex: 'https://chatgpt.com/codex/settings/usage' };
   if (typeof provider !== 'string' || !Object.hasOwn(urls, provider)) throw new Error('Assinatura desconhecida.');

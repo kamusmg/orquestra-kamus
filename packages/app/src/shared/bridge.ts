@@ -55,6 +55,12 @@ export interface OrquestraBridge {
   /** Área de transferência do sistema, pelo Electron (o navigator.clipboard pede permissão e falha sem foco). */
   readClipboard(): Promise<string>;
   writeClipboard(text: string): Promise<void>;
+  /** Leitura de imagem da área de transferência: salva em disco se houver imagem e retorna o caminho absoluto (ou null). */
+  readClipboardImage(): Promise<string | null>;
+  /** Salva arquivo arrastado (drop) em disco e retorna o caminho absoluto salvo. */
+  saveDroppedFile(name: string, data: Uint8Array): Promise<string>;
+  /** Retorna o caminho do arquivo no sistema de arquivos local a partir de um objeto File (drag and drop). */
+  getPathForFile(file: File): string;
   onFocusTerminal(listener: (name: string, workspaceId?: string) => void): () => void;
   readonly testProject: string | null;
   readonly portal: OrquestraPortalBridge;
