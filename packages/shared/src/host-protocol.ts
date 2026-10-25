@@ -34,6 +34,75 @@ export const modelListResultSchema = z.object({
 });
 export type ModelListResult = z.infer<typeof modelListResultSchema>;
 
+export const scoreNodeTerminalSchema = z.object({
+  name: z.string(),
+  agent: hostAgentSchema,
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  cwd: z.string().optional(),
+  persona: z.string().nullable().optional(),
+  color: z.string().optional(),
+  position: z.object({ x: z.number(), y: z.number() }),
+  size: z.object({ width: z.number(), height: z.number() }).optional(),
+});
+export type ScoreNodeTerminal = z.infer<typeof scoreNodeTerminalSchema>;
+
+export const scoreNodeNoteSchema = z.object({
+  name: z.string(),
+  content: z.string().optional(),
+  color: z.string().optional(),
+  position: z.object({ x: z.number(), y: z.number() }),
+  size: z.object({ width: z.number(), height: z.number() }).optional(),
+});
+export type ScoreNodeNote = z.infer<typeof scoreNodeNoteSchema>;
+
+export const scoreNodePortalSchema = z.object({
+  name: z.string(),
+  url: z.string(),
+  mode: z.string().optional(),
+  position: z.object({ x: z.number(), y: z.number() }),
+  size: z.object({ width: z.number(), height: z.number() }).optional(),
+});
+export type ScoreNodePortal = z.infer<typeof scoreNodePortalSchema>;
+
+export const scoreEdgeSchema = z.object({
+  source: z.string(),
+  target: z.string(),
+});
+export type ScoreEdge = z.infer<typeof scoreEdgeSchema>;
+
+export const scorePersonaSchema = z.object({
+  name: z.string(),
+  text: z.string(),
+  color: z.string().optional(),
+  scope: z.enum(['global', 'project']).optional(),
+});
+export type ScorePersona = z.infer<typeof scorePersonaSchema>;
+
+export const workspaceScoreSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  icon: z.string().default('book'),
+  color: z.string().default('#3b82f6'),
+  scope: z.enum(['global', 'project']).default('global'),
+  createdAt: z.number().default(() => Date.now()),
+  updatedAt: z.number().default(() => Date.now()),
+  settings: z.object({
+    includeCommands: z.boolean().default(true),
+    includeNotesContent: z.boolean().default(true),
+    includeChatHistory: z.boolean().default(false),
+  }).default({ includeCommands: true, includeNotesContent: true, includeChatHistory: false }),
+  nodes: z.object({
+    terminals: z.array(scoreNodeTerminalSchema).default([]),
+    notes: z.array(scoreNodeNoteSchema).default([]),
+    portals: z.array(scoreNodePortalSchema).default([]),
+  }).default({ terminals: [], notes: [], portals: [] }),
+  edges: z.array(scoreEdgeSchema).default([]),
+  embeddedPersonas: z.array(scorePersonaSchema).optional(),
+});
+export type WorkspaceScore = z.infer<typeof workspaceScoreSchema>;
+
 export const terminalChangesSchema = z.object({
   newName: terminalNameSchema.optional(),
   agent: agentKindSchema.optional(),
@@ -257,6 +326,34 @@ export const hostMethodSchemas = {
   'models.list': {
     params: z.object({ refresh: z.boolean().optional() }),
     result: modelListResultSchema,
+  },
+  'score.list': {
+    params: z.object({ workspaceId: z.string().optional() }).optional(),
+    result: z.object({ scores: z.array(workspaceScoreSchema) }),
+  },
+  'score.get': {
+    params: z.object({ id: z.string(), workspaceId: z.string().optional() }),
+    result: z.object({ score: workspaceScoreSchema.nullable() }),
+  },
+  'score.save': {
+    params: workspaceScoreSchema,
+    result: z.object({ ok: z.boolean(), id: z.string() }),
+  },
+  'score.remove': {
+    params: z.object({ id: z.string(), scope: z.enum(['global', 'project']) }),
+    result: z.object({ ok: z.boolean() }),
+  },
+  'score.instantiate': {
+    params: z.object({
+      id: z.string(),
+      workspaceId: z.string().optional(),
+      overrides: z.record(z.string(), z.any()).optional(),
+    }),
+    result: z.object({
+      ok: z.boolean(),
+      createdTerminals: z.array(z.string()),
+      createdNotes: z.array(z.string()),
+    }),
   },
 } as const;
 

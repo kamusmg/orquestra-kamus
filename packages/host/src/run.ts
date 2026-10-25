@@ -5,8 +5,10 @@ import { createLogger, DEFAULT_BIN_DIR, installCli, type AgentAdapter } from '@o
 import { type HostBridge } from './bridge.js';
 import { defaultControlPipePath, startControlPipeServer, type ControlPipeServer } from './control-pipe.js';
 import { startWorkspaceManager } from './workspace-manager.js';
+import { loadHostEnv } from './index.js';
 
 export async function runHost(opts: { adapters: Record<string, AgentAdapter>; controlPipePath?: string | false }): Promise<void> {
+  loadHostEnv();
   const cliScript = process.env.ORQ_CLI_SCRIPT;
   if (!cliScript) {
     console.error('ORQ_CLI_SCRIPT ausente. O processo do núcleo precisa ser iniciado pelo app.');

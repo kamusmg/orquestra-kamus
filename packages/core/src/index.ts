@@ -23,4 +23,5 @@ export * from './floors.js';
 export * from './android.js';
 export * from './routines.js';
 export * from './cyberdeck.js';
+export * from './scores.js';
 export type { Note } from './notes.js';

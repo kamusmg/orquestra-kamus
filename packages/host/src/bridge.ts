@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync, writeFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -34,6 +34,7 @@ import {
   type ModelEntry,
   type ModelListResult,
 } from '@orquestra/shared';
+import { getCerebroInstruction, resolveSessionGuide } from './instructions.js';
 import {
   createOrquestra,
   readCodexUsage,
@@ -44,6 +45,7 @@ import {
   ensureAgyGlobalHook,
   loadWorkspace,
   PersonaStore,
+  ScoreStore,
   RecentProjects,
   floorDirectory,
   saveWorkspace,
@@ -282,6 +284,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
   const recent = new RecentProjects({ file: opts.recentFile, log: opts.log });
   const settings = new SettingsStore({ file: opts.settingsFile, log: opts.log });
   const personaStore = new PersonaStore({ file: opts.personasFile, log: opts.log, defaults: opts.defaultPersonas });
+  const scoreStore = new ScoreStore({ globalDir: join(opts.dataDir, 'scores'), log: opts.log });
   const usageCache = opts.usageState?.cache ?? new Map<string, { expiresAt: number; value: SubscriptionUsage }>();
   const usageAbort = new AbortController();
   const usagePids = new Set<number>();
@@ -468,8 +471,13 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       });
       current.state.place(params.name, rect);
       orquestra.connect(caller, params.name);
-      if (resolvedPersona) {
-        orquestra.brief(session.name, caller, personaBrief(resolvedPersona, { regent: false }));
+      if (session.adapter.acceptsPrompts) {
+        if (resolvedPersona) {
+          orquestra.brief(session.name, caller, resolveSessionGuide({ persona: resolvedPersona, regente: false })!);
+        } else if (['agy', 'claude', 'codex'].includes(params.agent)) {
+          const cerebroGuide = getCerebroInstruction();
+          if (cerebroGuide) orquestra.brief(session.name, caller, cerebroGuide);
+        }
       }
       opts.send({
         kind: 'event',
@@ -517,7 +525,8 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       if (!targetDesc) throw new OrqError('NOT_FOUND', `Terminal ${params.target} não existe.`);
       const persona = resolvePersona(params.persona);
       const session = await orquestra.updateTerminal(params.target, { persona: params.persona });
-      orquestra.brief(params.target, caller, personaBrief(persona, { regent: targetDesc.regente }));
+      const guide = resolveSessionGuide({ persona, regente: targetDesc.regente });
+      if (guide) orquestra.brief(params.target, caller, guide);
       changed();
       const rect = project?.state.rectOf(params.target) ?? { x: 80, y: 80, ...TERMINAL_SIZE };
       opts.send({ kind: 'event', event: { type: 'terminal.added', info: info(session), rect, connectedTo: null } });
@@ -576,11 +585,27 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
     return (regentHandlers[method] as (p: unknown, c: string) => Promise<never>)(params, caller);
   };
 
+  const adaptersWithCerebro: Record<string, AgentAdapter> = Object.fromEntries(
+    Object.entries(opts.adapters).map(([kind, adapter]) => [
+      kind,
+      {
+        ...adapter,
+        launch: (ctx) => {
+          const spec = adapter.launch(ctx);
+          if (process.env.ORQ_CEREBRO_PATH) {
+            spec.env = { ...spec.env, ORQ_CEREBRO_PATH: process.env.ORQ_CEREBRO_PATH };
+          }
+          return spec;
+        },
+      },
+    ]),
+  );
+
   orquestra = await createOrquestra({
     pipePath: opts.pipePath,
     dataDir: opts.dataDir,
     cliScript: opts.cliScript,
-    adapters: opts.adapters,
+    adapters: adaptersWithCerebro,
     log: opts.log,
     ptyHost: opts.ptyHost,
     readyQuietMs: opts.readyQuietMs,
@@ -882,9 +907,12 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       }
       if (session.adapter.acceptsPrompts) {
         if (resolvedPersona) {
-          orquestra.brief(session.name, 'Orquestra', personaBrief(resolvedPersona, { regent: Boolean(regente) }));
+          orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ persona: resolvedPersona, regente: Boolean(regente) })!);
         } else if (regente) {
-          orquestra.brief(session.name, 'Orquestra', regentGuide());
+          orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ regente: true })!);
+        } else if (['agy', 'claude', 'codex'].includes(agent)) {
+          const cerebroGuide = getCerebroInstruction();
+          if (cerebroGuide) orquestra.brief(session.name, 'Orquestra', cerebroGuide);
         }
       }
       return info(session);
@@ -922,10 +950,14 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       if (changes.newName && changes.newName !== name) project?.state.rename(name, changes.newName);
       syncFlowAgents();
       const descriptor = orquestra.describeTerminals().find((terminal) => terminal.name === (changes.newName ?? name));
-      if (resolvedPersona && session.adapter.acceptsPrompts && !descriptor?.unloaded) {
-        orquestra.brief(session.name, 'Orquestra', personaBrief(resolvedPersona, { regent: Boolean(descriptor?.regente) }));
-      } else if (changes.regente === true && !before?.regente && session.adapter.acceptsPrompts) {
-        orquestra.brief(session.name, 'Orquestra', regentGuide());
+      if (session.adapter.acceptsPrompts && !descriptor?.unloaded) {
+        const guide = resolveSessionGuide({
+          persona: resolvedPersona,
+          regente: Boolean(changes.regente ?? descriptor?.regente),
+        });
+        if (guide) {
+          orquestra.brief(session.name, 'Orquestra', guide);
+        }
       }
       recordPids();
       changed();
@@ -946,12 +978,15 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
         if (before.persona) {
           try {
             const persona = resolvePersona(before.persona);
-            orquestra.brief(session.name, 'Orquestra', personaBrief(persona, { regent: before.regente }));
+            orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ persona, regente: before.regente })!);
           } catch (error) {
             opts.log.warn({ err: error, terminal: name, persona: before.persona }, 'não foi possível resolver a função ao reiniciar');
           }
         } else if (before.regente) {
-          orquestra.brief(session.name, 'Orquestra', regentGuide());
+          orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ regente: true })!);
+        } else if (['agy', 'claude', 'codex'].includes(before.agent)) {
+          const cerebroGuide = getCerebroInstruction();
+          if (cerebroGuide) orquestra.brief(session.name, 'Orquestra', cerebroGuide);
         }
       }
       recordPids();
@@ -993,8 +1028,16 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       const rect = { ...placeBeside(origin, Object.values(current.state.layout()), size), ...size };
       current.state.place(newName, rect);
       if (current.state.presentation(name).blurred) current.state.setPresentation(newName, { blurred: true });
-      if (persona && session.adapter.acceptsPrompts) orquestra.brief(newName, 'Orquestra', personaBrief(persona, { regent: source.regente }));
-      else if (source.regente && session.adapter.acceptsPrompts) orquestra.brief(newName, 'Orquestra', regentGuide());
+      if (session.adapter.acceptsPrompts) {
+        if (persona) {
+          orquestra.brief(newName, 'Orquestra', resolveSessionGuide({ persona, regente: source.regente })!);
+        } else if (source.regente) {
+          orquestra.brief(newName, 'Orquestra', resolveSessionGuide({ regente: true })!);
+        } else if (['agy', 'claude', 'codex'].includes(source.agent)) {
+          const cerebroGuide = getCerebroInstruction();
+          if (cerebroGuide) orquestra.brief(newName, 'Orquestra', cerebroGuide);
+        }
+      }
       changed();
       return { info: info(session), rect };
     },
@@ -1124,6 +1167,125 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       return {};
     },
     'models.list': async ({ refresh }) => discoverModels(Boolean(refresh)),
+    'score.list': async () => {
+      const scores = scoreStore.list(project?.dir);
+      return { scores };
+    },
+    'score.get': async (params) => {
+      const score = scoreStore.get(params.id, project?.dir);
+      return { score };
+    },
+    'score.save': async (params) => {
+      const { id } = scoreStore.save(params, project?.dir);
+      return { ok: true, id };
+    },
+    'score.remove': async (params) => {
+      const ok = scoreStore.remove(params.id, params.scope, project?.dir);
+      return { ok };
+    },
+    'score.instantiate': async (params) => {
+      const current = requireProject();
+      const score = scoreStore.get(params.id, current.dir);
+      if (!score) throw new OrqError('NOT_FOUND', `Partitura com id '${params.id}' não foi encontrada.`);
+
+      const createdTerminals: string[] = [];
+      const createdNotes: string[] = [];
+      const idMap = new Map<string, string>();
+
+      if (score.embeddedPersonas && score.embeddedPersonas.length > 0) {
+        for (const p of score.embeddedPersonas) {
+          if (p.scope === 'global') {
+            personaStore.write({ name: p.name, text: p.text });
+          } else {
+            current.state.writePersona({ name: p.name, text: p.text });
+          }
+        }
+      }
+
+      for (const t of score.nodes.terminals) {
+        let name = t.name;
+        let counter = 2;
+        while (Boolean(orquestra.topology.kindOf(name))) {
+          name = `${t.name} #${counter++}`;
+        }
+        idMap.set(t.name, name);
+
+        const termCwd = t.cwd || current.dir;
+        const adapter = opts.adapters[t.agent] ?? opts.adapters.claude;
+        const args = (score.settings.includeCommands && t.args) ? t.args : [];
+        const persona = t.persona ?? undefined;
+
+        const session = await createTerminalFor({
+          name,
+          agent: t.agent,
+          cwd: termCwd,
+          args,
+          persona,
+        });
+
+        const rect = {
+          x: t.position.x,
+          y: t.position.y,
+          width: t.size?.width ?? TERMINAL_SIZE.width,
+          height: t.size?.height ?? TERMINAL_SIZE.height,
+        };
+        current.state.place(name, rect);
+        createdTerminals.push(name);
+        opts.send({
+          kind: 'event',
+          event: {
+            type: 'terminal.added',
+            info: info(session),
+            rect,
+            connectedTo: null,
+          },
+        });
+      }
+
+      for (const n of score.nodes.notes) {
+        let name = n.name;
+        let counter = 2;
+        while (Boolean(orquestra.topology.kindOf(name))) {
+          name = `${n.name} #${counter++}`;
+        }
+        idMap.set(n.name, name);
+
+        const content = (score.settings.includeNotesContent && n.content) ? n.content : '';
+        const note = orquestra.createNote(name, content);
+        const rect = {
+          x: n.position.x,
+          y: n.position.y,
+          width: n.size?.width ?? NOTE_SIZE.width,
+          height: n.size?.height ?? NOTE_SIZE.height,
+        };
+        current.state.place(name, rect);
+        createdNotes.push(name);
+        opts.send({
+          kind: 'event',
+          event: {
+            type: 'note.changed',
+            note: noteInfo(note),
+            connectedTo: null,
+            rect,
+          },
+        });
+      }
+
+      for (const edge of score.edges) {
+        const from = idMap.get(edge.source) ?? edge.source;
+        const to = idMap.get(edge.target) ?? edge.target;
+        try {
+          if (orquestra.topology.kindOf(from) && orquestra.topology.kindOf(to)) {
+            orquestra.connect(from, to);
+          }
+        } catch {
+          // Ignora arestas inválidas
+        }
+      }
+
+      changed();
+      return { ok: true, createdTerminals, createdNotes };
+    },
   };
 
   async function handle(message: Exclude<MainToHost, { kind: 'shutdown' }> | HostCommand | string): Promise<unknown> {
@@ -1166,10 +1328,15 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
               if (cmd.connectTo) {
                 orquestra.connect(cmd.connectTo, cmd.name);
               }
-              if (resolvedPersona) {
-                orquestra.brief(session.name, cmd.connectTo ?? 'Orquestra', personaBrief(resolvedPersona, { regent: Boolean(cmd.regente) }));
-              } else if (cmd.regente) {
-                orquestra.brief(session.name, 'Orquestra', regentGuide());
+              if (session.adapter.acceptsPrompts) {
+                if (resolvedPersona) {
+                  orquestra.brief(session.name, cmd.connectTo ?? 'Orquestra', resolveSessionGuide({ persona: resolvedPersona, regente: Boolean(cmd.regente) })!);
+                } else if (cmd.regente) {
+                  orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ regente: true })!);
+                } else if (['agy', 'claude', 'codex'].includes(cmd.agent)) {
+                  const cerebroGuide = getCerebroInstruction();
+                  if (cerebroGuide) orquestra.brief(session.name, cmd.connectTo ?? 'Orquestra', cerebroGuide);
+                }
               }
               changed();
               opts.send({
