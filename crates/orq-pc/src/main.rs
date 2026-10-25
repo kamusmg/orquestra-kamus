@@ -1000,23 +1000,48 @@ fn main() {
                 let asar_new = r"D:\projetos D\orquestra\packages\app\release\win-unpacked\resources\app.asar.new";
                 let asar_target = r"D:\projetos D\orquestra\packages\app\release\win-unpacked\resources\app.asar";
                 if std::path::Path::new(asar_new).exists() {
-                    let _ = std::fs::rename(asar_new, asar_target);
+                    for _ in 0..10 {
+                        let _ = std::fs::remove_file(asar_target);
+                        if std::fs::rename(asar_new, asar_target).is_ok() {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                    }
                 }
 
                 let _ = launch_gui_with_opts(true);
 
-                // Aguarda o Host responder ao ping (até 25s)
-                for _ in 0..50 {
+                // Aguarda o Host responder e listar terminais abertos no workspace (até 30s)
+                for _ in 0..60 {
                     std::thread::sleep(std::time::Duration::from_millis(500));
-                    if send_host_command(&pipe_path, &build_ping_payload()).is_ok() {
-                        break;
+                    if let Ok(reply) = send_host_command(&pipe_path, &build_list_payload()) {
+                        let empty_vec = vec![];
+                        let workspaces = reply
+                            .get("result")
+                            .and_then(|r| r.get("workspaces"))
+                            .and_then(|w| w.as_array())
+                            .or_else(|| reply.get("workspaces").and_then(|w| w.as_array()))
+                            .unwrap_or(&empty_vec);
+                        let has_terminals = workspaces.iter().any(|w| {
+                            w.get("terminalCount")
+                                .and_then(|c| c.as_u64())
+                                .unwrap_or(0) > 0
+                        });
+                        if has_terminals {
+                            break;
+                        }
                     }
                 }
 
-                // Se foi solicitado retomar conversa em um terminal, aguarda a TUI estabilizar e envia o prompt
+                // Se foi solicitado retomar conversa em um terminal, aguarda 5s para o agy carregar a cv e envia o prompt
                 if let Some(term) = resume_terminal {
-                    std::thread::sleep(std::time::Duration::from_millis(5500));
-                    let prompt_payload = build_prompt_payload(&term, &resume_prompt, ws);
+                    std::thread::sleep(std::time::Duration::from_millis(5000));
+                    let prompt_text = if resume_prompt.ends_with('\r') || resume_prompt.ends_with('\n') {
+                        resume_prompt
+                    } else {
+                        format!("{}\r", resume_prompt)
+                    };
+                    let prompt_payload = build_prompt_payload(&term, &prompt_text, ws);
                     let _ = send_host_command(&pipe_path, &prompt_payload);
                 }
             }

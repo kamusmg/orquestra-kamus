@@ -180,4 +180,11 @@ describe('retomada no lançamento', () => {
     expect(agyAdapter.launch(ctx('conv-1')).args).toEqual(['--conversation', 'conv-1']);
     expect(agyAdapter.launch(ctx(null)).args).toEqual([]);
   });
+
+  it('agy com resume: true e sem sessionId passa --continue', () => {
+    expect(agyAdapter.launch({ ...ctx(null), resume: true }).args).toEqual(['--continue']);
+    expect(agyAdapter.launch({ ...ctx(null), resume: true, args: ['--continue'] }).args).toEqual([]);
+    expect(agyAdapter.launch({ ...ctx(null), resume: true, args: ['-c'] }).args).toEqual([]);
+    expect(agyAdapter.launch({ ...ctx(null), resume: true, args: ['--conversation', 'abc'] }).args).toEqual([]);
+  });
 });
