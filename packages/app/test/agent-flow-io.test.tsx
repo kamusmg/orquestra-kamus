@@ -102,7 +102,7 @@ describe('E/S de dados dos agentes desligada (AGENT_FLOW_IO)', () => {
     expect(chip.getAttribute('title')).toBe('Modelo ativo');
   });
 
-  it('TerminalNode exibe crachá de persona colorida estilo Maestri', () => {
+  it('TerminalNode exibe crachá de persona colorida', () => {
     appStore.getState().addTerminal({
       name: 'persona-term',
       agent: 'agy',
