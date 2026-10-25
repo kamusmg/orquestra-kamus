@@ -28,6 +28,8 @@ export interface ScoreNodePortal {
 export interface ScoreEdge {
   source: string;
   target: string;
+  a?: string;
+  b?: string;
 }
 
 export interface ScorePersona {

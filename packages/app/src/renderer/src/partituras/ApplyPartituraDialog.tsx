@@ -1,14 +1,16 @@
 import { useState, useMemo } from 'react';
 import type { ScoreDefinition, ScoreNodeTerminal, ScoreNodeNote, ScoreNodePortal, ScoreEdge } from './types';
 import { MiniCanvasPreview } from './MiniCanvasPreview';
+import { classifyScoreNote, normalizeScoreNodeName, prepareScoreNotesForApplication } from './templates';
 
 export interface ApplyPartituraDialogProps {
   score: ScoreDefinition;
+  projectName?: string;
   onClose(): void;
   onApply(customizedScore: ScoreDefinition): Promise<void> | void;
 }
 
-export function ApplyPartituraDialog({ score, onClose, onApply }: ApplyPartituraDialogProps) {
+export function ApplyPartituraDialog({ score, projectName, onClose, onApply }: ApplyPartituraDialogProps) {
   const [tab, setTab] = useState<'partitura' | 'detalhes'>('partitura');
   const [selectedTerminals, setSelectedTerminals] = useState<Record<number, boolean>>(() => {
     const map: Record<number, boolean> = {};
@@ -31,6 +33,9 @@ export function ApplyPartituraDialog({ score, onClose, onApply }: ApplyPartitura
     });
     return map;
   });
+
+  // Limpeza de notas operacionais (Quadro de Progresso, Contexto Vivo) para novo projeto
+  const [cleanOperationalNotes, setCleanOperationalNotes] = useState(true);
 
   // Hot-swap de motores e argumentos por terminal
   const [terminalOverrides, setTerminalOverrides] = useState<
@@ -71,7 +76,11 @@ export function ApplyPartituraDialog({ score, onClose, onApply }: ApplyPartitura
       }
     });
 
-    const activeNotes: ScoreNodeNote[] = score.nodes.notes.filter((_, idx) => selectedNotes[idx]);
+    const filteredNotes = score.nodes.notes.filter((_, idx) => selectedNotes[idx]);
+    const activeNotes: ScoreNodeNote[] = prepareScoreNotesForApplication(filteredNotes, {
+      cleanOperationalNotes,
+      projectName,
+    });
     const activePortals: ScoreNodePortal[] = score.nodes.portals.filter((_, idx) => selectedPortals[idx]);
 
     // Filtra arestas apenas entre nós que continuam selecionados
@@ -79,13 +88,30 @@ export function ApplyPartituraDialog({ score, onClose, onApply }: ApplyPartitura
     const activeNoteNames = new Set(activeNotes.map((n) => n.name));
     const activeNames = new Set([...activeTerminalNames, ...activeNoteNames]);
 
+    const matchActiveName = (name: string): string | undefined => {
+      if (!name) return undefined;
+      if (activeNames.has(name)) return name;
+      const norm = normalizeScoreNodeName(name);
+      for (const candidate of activeNames) {
+        if (normalizeScoreNodeName(candidate) === norm) {
+          return candidate;
+        }
+      }
+      return undefined;
+    };
+
     const activeEdges: ScoreEdge[] = score.edges
       .map((e) => {
-        const newSource = activeTerminalNameMap.get(e.source) ?? e.source;
-        const newTarget = activeTerminalNameMap.get(e.target) ?? e.target;
-        return { source: newSource, target: newTarget };
+        const rawSource = e.source ?? e.a ?? '';
+        const rawTarget = e.target ?? e.b ?? '';
+        const mappedSource = activeTerminalNameMap.get(rawSource) ?? rawSource;
+        const mappedTarget = activeTerminalNameMap.get(rawTarget) ?? rawTarget;
+        const resolvedSource = matchActiveName(mappedSource);
+        const resolvedTarget = matchActiveName(mappedTarget);
+        if (!resolvedSource || !resolvedTarget) return null;
+        return { source: resolvedSource, target: resolvedTarget };
       })
-      .filter((e) => activeNames.has(e.source) && activeNames.has(e.target));
+      .filter((e): e is ScoreEdge => e !== null);
 
     return {
       ...score,
@@ -96,7 +122,7 @@ export function ApplyPartituraDialog({ score, onClose, onApply }: ApplyPartitura
       },
       edges: activeEdges,
     };
-  }, [score, selectedTerminals, selectedNotes, selectedPortals, terminalOverrides]);
+  }, [score, selectedTerminals, selectedNotes, selectedPortals, terminalOverrides, cleanOperationalNotes]);
 
   // Lista de comandos executáveis para o alerta de segurança
   const executableCommands = useMemo(() => {
@@ -347,21 +373,68 @@ export function ApplyPartituraDialog({ score, onClose, onApply }: ApplyPartitura
                   {score.nodes.notes.length > 0 && (
                     <>
                       <div className="details-section-header" style={{ marginTop: '16px' }}>
-                        <h4>Notas Compartilhadas ({score.nodes.notes.length})</h4>
-                      </div>
-                      <div className="simple-nodes-list">
-                        {score.nodes.notes.map((note, idx) => (
-                          <label key={idx} className="checkbox-label simple-node-item">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                          <h4>Notas Compartilhadas ({score.nodes.notes.length})</h4>
+                          <label className="checkbox-label clean-template-toggle" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', margin: 0 }}>
                             <input
                               type="checkbox"
-                              checked={Boolean(selectedNotes[idx])}
-                              onChange={(e) =>
-                                setSelectedNotes((prev) => ({ ...prev, [idx]: e.target.checked }))
-                              }
+                              checked={cleanOperationalNotes}
+                              onChange={(e) => setCleanOperationalNotes(e.target.checked)}
+                              data-testid="toggle-clean-operational-notes"
                             />
-                            <span>📝 {note.name}</span>
+                            <span title="Inicia notas operacionais como Quadro de Progresso e Contexto Vivo limpas, sem histórico do projeto anterior">
+                              Limpar notas operacionais
+                            </span>
                           </label>
-                        ))}
+                        </div>
+                      </div>
+                      <div className="simple-nodes-list">
+                        {score.nodes.notes.map((note, idx) => {
+                          const classification = classifyScoreNote(note.name);
+                          return (
+                            <label key={idx} className="checkbox-label simple-node-item">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(selectedNotes[idx])}
+                                onChange={(e) =>
+                                  setSelectedNotes((prev) => ({ ...prev, [idx]: e.target.checked }))
+                                }
+                              />
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                📝 {note.name}
+                                {classification === 'fixed-guideline' ? (
+                                  <span
+                                    className="badge-fixed-guideline"
+                                    style={{
+                                      fontSize: '10px',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      background: 'rgba(59, 130, 246, 0.15)',
+                                      color: '#60a5fa',
+                                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    }}
+                                  >
+                                    Diretriz Fixa
+                                  </span>
+                                ) : classification === 'operational-progress' || classification === 'operational-context' ? (
+                                  <span
+                                    className="badge-operational"
+                                    style={{
+                                      fontSize: '10px',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      background: cleanOperationalNotes ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                      color: cleanOperationalNotes ? '#34d399' : '#fbbf24',
+                                      border: cleanOperationalNotes ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)',
+                                    }}
+                                  >
+                                    {cleanOperationalNotes ? 'Template Limpo' : 'Original'}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </label>
+                          );
+                        })}
                       </div>
                     </>
                   )}

@@ -21,10 +21,16 @@ const projects = [
 
 function fakeApi() {
   const calls: Array<[string, unknown]> = [];
+  let currentProjects = [...projects];
   const api = {
     command: (async (method: string, params: unknown) => {
       calls.push([method, params]);
-      if (method === 'recent.list') return { projects };
+      if (method === 'recent.list') return { projects: currentProjects };
+      if (method === 'recent.remove') {
+        const dir = (params as { dir: string }).dir;
+        currentProjects = currentProjects.filter((p) => p.dir.toLowerCase() !== dir.toLowerCase());
+        return { projects: currentProjects };
+      }
       if (method === 'workspace.list') return { workspaces: [], selectedId: null };
       if (method === 'files.list') return { entries: [], comparison: 'session', truncated: false };
       if (method === 'project.open') {
@@ -83,6 +89,18 @@ describe('Sidebar', () => {
     render(<Sidebar api={api} onOpenSettings={() => {}} onOpenPersonas={onOpenPersonas} />);
     fireEvent.click(await screen.findByTestId('open-personas'));
     expect(onOpenPersonas).toHaveBeenCalled();
+  });
+
+  it('remove projeto recente ao clicar no botão ×', async () => {
+    const { api, calls } = fakeApi();
+    render(<Sidebar api={api} onOpenSettings={() => {}} onOpenPersonas={() => {}} />);
+    await screen.findByTestId('recent-alfa');
+    const removeBtn = screen.getByTestId('remove-recent-alfa');
+    fireEvent.click(removeBtn);
+    await waitFor(() => {
+      expect(screen.queryByTestId('recent-alfa')).toBeNull();
+    });
+    expect(calls.some(([method, params]) => method === 'recent.remove' && (params as { dir: string }).dir === 'C:\\proj\\alfa')).toBe(true);
   });
 });
 

@@ -32,6 +32,7 @@ import {
   saveScore,
   removeScore,
   getLocalScores,
+  normalizeScoreNodeName,
   type ScoreDefinition,
 } from './partituras';
 
@@ -214,7 +215,7 @@ export function App() {
         const info = await api.command('terminal.create', {
           name: finalName,
           agent: term.agent,
-          cwd: term.cwd || project?.dir || '.',
+          cwd: project?.dir || term.cwd || '.',
           resume: false,
           args: term.args ?? [],
           regente: Boolean(term.regente),
@@ -289,11 +290,38 @@ export function App() {
       }
     }
 
-    // 4. Reconectar arestas traduzidas
+    // 4. Reconectar arestas traduzidas (suporta edge.source ?? edge.a e edge.target ?? edge.b com resolução inteligente)
+    const resolveNodeName = (name: string): string | undefined => {
+      if (!name) return undefined;
+      if (disambiguation.has(name)) return disambiguation.get(name);
+      if (existing.has(name)) return name;
+
+      const norm = normalizeScoreNodeName(name);
+
+      for (const [k, v] of disambiguation.entries()) {
+        if (normalizeScoreNodeName(k) === norm) {
+          return v;
+        }
+      }
+
+      for (const ex of existing) {
+        if (normalizeScoreNodeName(ex) === norm) {
+          return ex;
+        }
+      }
+
+      return disambiguation.get(name) ?? name;
+    };
+
     for (const edge of scoreToApply.edges) {
-      const a = disambiguation.get(edge.source) ?? edge.source;
-      const b = disambiguation.get(edge.target) ?? edge.target;
-      if (existing.has(a) && existing.has(b)) {
+      const rawA = edge.source ?? (edge as { a?: string }).a;
+      const rawB = edge.target ?? (edge as { b?: string }).b;
+      if (!rawA || !rawB) continue;
+
+      const a = resolveNodeName(rawA);
+      const b = resolveNodeName(rawB);
+
+      if (a && b && existing.has(a) && existing.has(b)) {
         try {
           await api.command('edge.connect', { a, b });
           appStore.getState().addEdge({ a, b });
@@ -488,6 +516,7 @@ export function App() {
         {applyingScore && (
           <ApplyPartituraDialog
             score={applyingScore}
+            projectName={project?.name}
             onClose={() => {
               setApplyingScore(null);
               setDropPosition(undefined);

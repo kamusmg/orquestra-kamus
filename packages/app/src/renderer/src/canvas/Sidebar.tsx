@@ -79,6 +79,15 @@ export function Sidebar({
     if (dir) await open(dir);
   };
 
+  const removeRecent = async (dir: string) => {
+    try {
+      const result = await api.command('recent.remove', { dir });
+      setRecent(result.projects);
+    } catch {
+      setRecent((current) => current.filter((item) => !sameDir(item.dir, dir)));
+    }
+  };
+
   const toggleMenu = () => {
     const box = menuButtonRef.current?.getBoundingClientRect();
     setMenu((current) => current ? null : { x: box?.left ?? 10, y: (box?.bottom ?? 40) + 4 });
@@ -145,7 +154,30 @@ export function Sidebar({
               <span className="proj-name">{row.name}</span>
               {workspace ? <small>{workspaceSummary(workspace)}</small> : null}
             </button>
-            {workspace ? <button className="proj-close" disabled={changing} title={`Fechar ${workspace.name}`} aria-label={`Fechar workspace ${workspace.name}`} onClick={() => void closeWorkspace(workspace.id)}>×</button> : null}
+            {workspace ? (
+              <button
+                className="proj-close"
+                disabled={changing}
+                title={`Fechar ${workspace.name}`}
+                aria-label={`Fechar workspace ${workspace.name}`}
+                onClick={() => void closeWorkspace(workspace.id)}
+              >
+                ×
+              </button>
+            ) : (
+              <button
+                className="proj-close"
+                title={`Remover ${row.name} dos recentes`}
+                aria-label={`Remover ${row.name} dos recentes`}
+                data-testid={`remove-recent-${row.name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void removeRecent(row.dir);
+                }}
+              >
+                ×
+              </button>
+            )}
           </div>
         );
       })}

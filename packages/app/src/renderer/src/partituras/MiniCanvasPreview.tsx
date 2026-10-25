@@ -116,12 +116,14 @@ export function MiniCanvasPreview({
     }> = [];
 
     for (const edge of allEdges) {
-      const c1 = nodeCenterMap.get(edge.source);
-      const c2 = nodeCenterMap.get(edge.target);
+      const src = edge.source ?? edge.a ?? '';
+      const tgt = edge.target ?? edge.b ?? '';
+      const c1 = nodeCenterMap.get(src);
+      const c2 = nodeCenterMap.get(tgt);
       if (c1 && c2) {
         computedEdges.push({
-          source: edge.source,
-          target: edge.target,
+          source: src,
+          target: tgt,
           x1: c1.x,
           y1: c1.y,
           x2: c2.x,
