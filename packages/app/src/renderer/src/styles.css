@@ -13,7 +13,51 @@ input { font: inherit; color: var(--text); background: var(--bg); border: 1px so
 .app { display: flex; height: 100%; }
 .workspace-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 /* A janela não tem barra de título: esta faixa arrasta e deixa espaço para os botões nativos (titleBarOverlay, 32px). */
-.titlebar { height: 32px; flex-shrink: 0; background: var(--panel); border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
+.titlebar {
+  height: 32px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 140px;
+}
+.titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+.titlebar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text);
+  background: #181d26;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.titlebar-btn:hover {
+  background: #242b38;
+  border-color: var(--acc);
+}
+.titlebar-badge {
+  background: var(--acc);
+  color: #111;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 9px;
+  line-height: 1;
+}
 .workspace-empty { flex-direction: column; gap: 12px; padding: 30px; text-align: center; }
 .workspace-changing { position: fixed; inset: 0; z-index: 1000; background: #0d0f1380; display: flex; align-items: center; justify-content: center; cursor: wait; }
 .group-tools { position: absolute; z-index: 5; left: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; }
@@ -266,3 +310,849 @@ input { font: inherit; color: var(--text); background: var(--bg); border: 1px so
 /* O botão global tem texto claro, ilegível no papel da nota. */
 .note-node button { color: #2b2620; border-color: #c9b88f; }
 .note-link { text-decoration: underline; }
+
+/* ==========================================================================
+   PARTITURAS & PERFIS DE AGENTES (Drawer lateral, Preview SVG, Modais)
+   ========================================================================== */
+
+/* Drawer Lateral */
+.partituras-drawer {
+  position: fixed;
+  top: 32px;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 90vw;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -6px 0 24px rgba(0, 0, 0, 0.45);
+  animation: drawerSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes drawerSlideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.drawer-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  background: #101318;
+}
+
+.drawer-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-title-row h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.drawer-icon {
+  font-size: 16px;
+}
+
+.drawer-badge {
+  font-size: 11px;
+  font-weight: 700;
+  background: #252b36;
+  color: var(--acc);
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+.drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-action-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+}
+
+.drawer-close-btn {
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 7px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.drawer-close-btn:hover {
+  color: var(--text);
+}
+
+.drawer-toolbar {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  background: #12151b;
+}
+
+.drawer-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.drawer-search-wrap .search-icon {
+  position: absolute;
+  left: 8px;
+  font-size: 12px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.drawer-search-input {
+  width: 100%;
+  padding-left: 28px;
+  padding-right: 24px;
+  font-size: 12px;
+  background: #0d0f13;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.drawer-search-input:focus {
+  border-color: var(--acc);
+  outline: none;
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+.drawer-filter-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.filter-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: #181d26;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filter-chip.is-active {
+  background: var(--acc2);
+  border-color: var(--acc);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.drawer-cards-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.drawer-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--muted);
+  gap: 10px;
+}
+
+.drawer-empty-state .empty-icon {
+  font-size: 32px;
+  opacity: 0.7;
+}
+
+.drawer-empty-state .empty-text {
+  font-size: 13px;
+  margin: 0;
+}
+
+/* Card de Partitura */
+.partitura-card {
+  background: #151820;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+  user-select: none;
+}
+
+.partitura-card:hover {
+  border-color: var(--acc);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.partitura-card:active {
+  transform: translateY(0);
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.card-title-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  width: fit-content;
+}
+
+.scope-badge.scope-global {
+  background: #1e3a5f;
+  color: #7aa7ff;
+}
+
+.scope-badge.scope-workspace {
+  background: #2a2818;
+  color: #eab308;
+}
+
+.card-delete-btn {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+
+.card-delete-btn:hover {
+  opacity: 1;
+}
+
+.card-description {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.card-preview-container {
+  border: 1px solid #1f2530;
+  border-radius: 6px;
+  background: #090b0e;
+  overflow: hidden;
+}
+
+.card-mini-preview {
+  width: 100%;
+  height: 100px;
+  display: block;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.card-meta-chips {
+  display: flex;
+  gap: 6px;
+}
+
+.meta-chip {
+  background: #1a202a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #9aa3b2;
+  font-size: 10px;
+}
+
+.drag-hint {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* Modais: Nova Partitura e Apply Partitura */
+.new-partitura-modal {
+  width: 860px;
+  max-width: 95vw;
+  height: 640px;
+  max-height: 92vh;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.new-partitura-header {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  background: #11141a;
+  border-bottom: 1px solid var(--line);
+}
+
+.new-partitura-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.new-partitura-icon-badge {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  border-radius: 8px;
+}
+
+.new-partitura-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dialog-close-btn {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dialog-close-btn:hover {
+  color: var(--text);
+}
+
+.new-partitura-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* Coluna Esquerda: Preview */
+.new-partitura-left {
+  width: 340px;
+  flex-shrink: 0;
+  background: #090b0e;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1a202c;
+  background: #0c0f14;
+}
+
+.preview-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.preview-badge {
+  font-size: 10px;
+  background: #19212d;
+  color: var(--acc);
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.apply-dialog-preview {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+/* Coluna Direita: Formulário */
+.new-partitura-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--panel);
+}
+
+.new-partitura-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  background: #11141a;
+  padding: 0 16px;
+  gap: 8px;
+}
+
+.tab-btn {
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+
+.tab-btn.active {
+  color: var(--acc);
+  border-bottom-color: var(--acc);
+  font-weight: 600;
+}
+
+.dialog-error-banner {
+  background: #3e1b1b;
+  color: #ff9999;
+  padding: 8px 16px;
+  font-size: 12px;
+  border-bottom: 1px solid #6b2626;
+}
+
+.new-partitura-scroll-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.input-with-counter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.char-counter {
+  font-size: 10px;
+  color: var(--muted);
+  align-self: flex-end;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #101318;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: var(--acc);
+}
+
+.scope-selector {
+  display: flex;
+  gap: 16px;
+}
+
+.scope-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.icon-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+  background: #0d0f13;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.icon-btn {
+  font-size: 16px;
+  padding: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.icon-btn.is-selected {
+  border-color: var(--acc);
+  background: var(--acc2);
+}
+
+.color-picker-palette {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.color-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.color-circle.is-selected {
+  transform: scale(1.15);
+  border-color: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+}
+
+/* Alerta de Segurança e Comandos */
+.security-alert-box {
+  background: #241d13;
+  border: 1px solid #784a14;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.security-alert-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f59e0b;
+  font-size: 13px;
+}
+
+.security-alert-desc {
+  margin: 0;
+  font-size: 11px;
+  color: #d1b48c;
+}
+
+.security-commands-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.security-command-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  background: #15120c;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #3d270e;
+}
+
+.engine-tag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.engine-agy { background: #1e3a5f; color: #7aa7ff; }
+.engine-claude { background: #3b281c; color: #f2a33a; }
+.engine-codex { background: #163624; color: #4cc38a; }
+.engine-shell { background: #262b35; color: #d6dae2; }
+
+.command-terminal-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.command-code {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  color: #f7df94;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Topologia Summary */
+.partitura-topology-summary h4 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.summary-badges-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.summary-chip {
+  background: #11141a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chip-count {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--acc);
+}
+
+.chip-label {
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* Detalhes & Hot-Swap */
+.details-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.details-section-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.terminals-hotswap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.node-config-card {
+  background: #11141a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.node-config-card.is-disabled {
+  opacity: 0.5;
+}
+
+.node-config-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.node-toggle-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.persona-badge {
+  font-size: 10px;
+  background: #1e2532;
+  border: 1px solid var(--line);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.node-config-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 20px;
+  border-left: 2px solid var(--line);
+  margin-left: 4px;
+}
+
+.node-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-label {
+  font-size: 11px;
+  color: var(--muted);
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.compact-input {
+  flex: 1;
+  padding: 3px 6px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+.compact-select {
+  flex: 1;
+  padding: 3px 6px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+}
+
+.args-input {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+}
+
+.simple-nodes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.simple-node-item {
+  background: #11141a;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+.new-partitura-footer {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 16px;
+  background: #11141a;
+  border-top: 1px solid var(--line);
+}
+
+.secondary-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+}
+
+.primary-btn {
+  background: var(--acc);
+  color: #111;
+  border-color: var(--acc);
+  font-weight: 600;
+  padding: 6px 14px;
+  font-size: 12px;
+}
+

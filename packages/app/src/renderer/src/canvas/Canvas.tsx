@@ -111,7 +111,7 @@ export async function handleCanvasDelete({
   return false;
 }
 
-export function Canvas({ snapToGrid = true, motion = 'contained', onRemoveRequest, onNewGroup }: { snapToGrid?: boolean; motion?: CanvasMotion; onRemoveRequest(name: string): void; onNewGroup?(selection: boolean, position?: Position): void }) {
+export function Canvas({ snapToGrid = true, motion = 'contained', onRemoveRequest, onNewGroup, onScoreDrop }: { snapToGrid?: boolean; motion?: CanvasMotion; onRemoveRequest(name: string): void; onNewGroup?(selection: boolean, position?: Position): void; onScoreDrop?(score: any, position: Position): void }) {
   const workspaceId = activeWorkspaceId();
   const api = useMemo(() => createCommandApi(window.orquestra.invoke, () => workspaceId), [workspaceId]);
   const terminals = useApp((state) => state.terminals);
@@ -314,6 +314,25 @@ export function Canvas({ snapToGrid = true, motion = 'contained', onRemoveReques
         setPaneMenu({ x: Math.min(event.clientX, window.innerWidth - 220), y: Math.min(event.clientY, window.innerHeight - 110), position: screenToFlowPosition({ x: event.clientX, y: event.clientY }) });
       }}
       onBeforeDelete={onBeforeDelete}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('application/orq-score')) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }
+      }}
+      onDrop={(event) => {
+        const rawScore = event.dataTransfer.getData('application/orq-score');
+        if (rawScore && onScoreDrop) {
+          event.preventDefault();
+          try {
+            const parsed = JSON.parse(rawScore);
+            const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+            onScoreDrop(parsed, pos);
+          } catch (err) {
+            console.error('Falha ao processar Partitura solta:', err);
+          }
+        }
+      }}
       deleteKeyCode={isFullZoom && focused ? null : 'Delete'}
       connectionMode={ConnectionMode.Loose}
       zoomOnScroll={false}

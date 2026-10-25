@@ -1,6 +1,6 @@
 import { appStore, useApp } from '../store';
 
-export function Palette({ onNewTerminal, onNewNote, onNewPortal, onNewGroup, onGroupSelection }: { onNewTerminal(): void; onNewNote(): void; onNewPortal?(): void; onNewGroup?(): void; onGroupSelection?(): void }) {
+export function Palette({ onNewTerminal, onNewNote, onNewPortal, onNewGroup, onGroupSelection, onOpenScores }: { onNewTerminal(): void; onNewNote(): void; onNewPortal?(): void; onNewGroup?(): void; onGroupSelection?(): void; onOpenScores?(): void }) {
   const connectMode = useApp((state) => state.connectMode);
   const hasProject = useApp((state) => state.project !== null);
   const selectionMode = useApp((state) => state.selectionMode);
@@ -19,6 +19,11 @@ export function Palette({ onNewTerminal, onNewNote, onNewPortal, onNewGroup, onG
       {onNewPortal ? (
         <button className="tool" data-testid="palette-new-portal" disabled={!hasProject} onClick={onNewPortal}>
           + Portal
+        </button>
+      ) : null}
+      {onOpenScores ? (
+        <button className="tool" data-testid="palette-scores" disabled={!hasProject} onClick={onOpenScores} title="Partituras & Perfis de Agentes">
+          📖 Partituras
         </button>
       ) : null}
       <button className={connectMode ? 'tool is-on' : 'tool'} data-testid="palette-connect" disabled={!hasProject} onClick={() => appStore.getState().setConnectMode(!connectMode)}>
