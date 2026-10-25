@@ -35,6 +35,7 @@ import {
   type ModelListResult,
 } from '@orquestra/shared';
 import { getCerebroInstruction, resolveSessionGuide } from './instructions.js';
+import { formatBracketedPrompt } from './control-pipe.js';
 import {
   createOrquestra,
   readCodexUsage,
@@ -106,7 +107,7 @@ export type HostBridgeOptions = {
 
 export type HostBridge = {
   handle(message: Exclude<MainToHost, { kind: 'shutdown' }> | HostCommand | string): Promise<unknown>;
-  dispatchForTest(method: MethodName, params: unknown, caller: { session: string }): Promise<unknown>;
+  dispatchForTest(method: MethodName | HostMethod | string, params: unknown, caller?: { session: string }): Promise<unknown>;
   close(): Promise<void>;
   cancelWork?(): Promise<void>;
   unloadIdleTerminals?(): Promise<string[]>;
@@ -264,6 +265,33 @@ export function resolveAutoModelArgs(
       } else if (val === 'auto-lead' || val === 'latest-lead') {
         result[i] = `--model=${leadModel}`;
       }
+    }
+  }
+  return result;
+}
+
+export function ensureAgyDefaultModel(
+  agent: HostAgent | string,
+  regente: boolean | undefined,
+  args: string[] | undefined,
+  flashModel = 'gemini-3.8-flash-high',
+): string[] | undefined {
+  if (agent !== 'agy') return args;
+  let result = [...(args ?? [])];
+  // Remove qualquer --yolo acidental para nunca derrubar o CLI do agy
+  result = result.filter((a) => a !== '--yolo');
+
+  if (!regente) {
+    if (!result.includes('--dangerously-skip-permissions')) {
+      result.push('--dangerously-skip-permissions');
+    }
+    const hasMode = result.some((a) => a === '--mode' || a.startsWith('--mode='));
+    if (!hasMode) {
+      result.push('--mode', 'accept-edits');
+    }
+    const hasModel = result.some((a) => a === '--model' || a.startsWith('--model='));
+    if (!hasModel) {
+      result.push('--model', flashModel);
     }
   }
   return result;
@@ -459,7 +487,8 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       const { recommendedFlash, recommendedLead } = await discoverModels();
       const effectiveFlash = recommendedFlash ?? 'gemini-3.8-flash-high';
       const effectiveLead = recommendedLead ?? 'gemini-4-argon-high';
-      const resolvedArgs = resolveAutoModelArgs(params.args, effectiveFlash, effectiveLead);
+      const autoArgs = resolveAutoModelArgs(params.args, effectiveFlash, effectiveLead);
+      const resolvedArgs = ensureAgyDefaultModel(params.agent, false, autoArgs, effectiveFlash);
       const session = await createTerminalFor({
         name: params.name,
         agent: params.agent,
@@ -896,7 +925,8 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       const { recommendedFlash, recommendedLead } = await discoverModels();
       const effectiveFlash = recommendedFlash ?? 'gemini-3.8-flash-high';
       const effectiveLead = recommendedLead ?? 'gemini-4-argon-high';
-      const resolvedArgs = resolveAutoModelArgs(args, effectiveFlash, effectiveLead);
+      const autoArgs = resolveAutoModelArgs(args, effectiveFlash, effectiveLead);
+      const resolvedArgs = ensureAgyDefaultModel(agent, Boolean(regente), autoArgs, effectiveFlash);
       const resolvedPersona = persona ? resolvePersona(persona) : undefined;
       const placement = groupId ? prepareGroupedNode(groupId, 'terminal', name) : undefined;
       const session = await createTerminalFor({ id: placement?.id, name, agent, cwd, resume, args: resolvedArgs, regente, persona, monitor });
@@ -920,6 +950,8 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
     'terminal.update': async ({ name, ...changes }) => {
       opts.log.info({ terminal: name, method: 'terminal.update', keys: Object.keys(changes) }, 'comando da interface');
       const before = orquestra.describeTerminals().find((terminal) => terminal.name === name);
+      const sessionBefore = orquestra.session(name);
+      const wasExited = before?.unloaded || sessionBefore?.state === 'exited';
       let resolvedPersona: Persona | undefined;
       if (changes.persona !== undefined) {
         const effectiveAgent = changes.agent ?? before?.agent;
@@ -946,7 +978,10 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
           throw new OrqError('USAGE', 'Sem o hook global, o Orquestra não sabe quando o agy termina. O agente não foi trocado.');
         }
       }
-      const session = await orquestra.updateTerminal(name, changes);
+      let session = await orquestra.updateTerminal(name, changes);
+      if (wasExited || session.state === 'exited') {
+        session = await orquestra.restartTerminal(changes.newName ?? name);
+      }
       if (changes.newName && changes.newName !== name) project?.state.rename(name, changes.newName);
       syncFlowAgents();
       const descriptor = orquestra.describeTerminals().find((terminal) => terminal.name === (changes.newName ?? name));
@@ -1202,6 +1237,10 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
         }
       }
 
+      const { recommendedFlash, recommendedLead } = await discoverModels();
+      const effectiveFlash = recommendedFlash ?? 'gemini-3.8-flash-high';
+      const effectiveLead = recommendedLead ?? 'gemini-4-argon-high';
+
       for (const t of score.nodes.terminals) {
         let name = t.name;
         let counter = 2;
@@ -1211,8 +1250,8 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
         idMap.set(t.name, name);
 
         const termCwd = t.cwd || current.dir;
-        const adapter = opts.adapters[t.agent] ?? opts.adapters.claude;
-        const args = (score.settings.includeCommands && t.args) ? t.args : [];
+        const baseArgs = (score.settings.includeCommands && t.args) ? t.args : [];
+        const args = resolveAutoModelArgs(baseArgs, effectiveFlash, effectiveLead);
         const persona = t.persona ?? undefined;
 
         const session = await createTerminalFor({
@@ -1314,7 +1353,8 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
               const { recommendedFlash, recommendedLead } = await discoverModels();
               const effectiveFlash = recommendedFlash ?? 'gemini-3.8-flash-high';
               const effectiveLead = recommendedLead ?? 'gemini-4-argon-high';
-              const resolvedArgs = resolveAutoModelArgs(cmd.args, effectiveFlash, effectiveLead);
+              const autoArgs = resolveAutoModelArgs(cmd.args, effectiveFlash, effectiveLead);
+              const resolvedArgs = ensureAgyDefaultModel(cmd.agent, Boolean(cmd.regente), autoArgs, effectiveFlash);
               const session = await createTerminalFor({
                 name: cmd.name,
                 agent: cmd.agent,
@@ -1364,7 +1404,13 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
             }
             case 'update-terminal': {
               const changes = { ...(cmd.changes ?? {}), ...(cmd.agent ? { agent: cmd.agent } : {}) };
-              const session = await orq().updateTerminal(cmd.name, changes);
+              const before = orq().describeTerminals().find((t) => t.name === cmd.name);
+              const sessionBefore = orq().session(cmd.name);
+              const wasExited = before?.unloaded || sessionBefore?.state === 'exited';
+              let session = await orq().updateTerminal(cmd.name, changes);
+              if (wasExited || session.state === 'exited') {
+                session = await orq().restartTerminal(changes.newName ?? cmd.name);
+              }
               recordPids();
               changed();
               return info(session);
@@ -1381,8 +1427,25 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
               changed();
               return info(session);
             }
+            case 'send-prompt': {
+              const targetName = cmd.name || (cmd as any).terminal;
+              const promptText = cmd.text || (cmd as any).prompt || (cmd as any).data || '';
+              const before = orq().describeTerminals().find((t) => t.name === targetName);
+              let session = requireSession(targetName);
+              if (before?.unloaded || session.state === 'exited') {
+                session = await orq().restartTerminal(targetName);
+              }
+              const promptPayload = formatBracketedPrompt(promptText);
+              session.userInput(promptPayload.escape);
+              session.userInput(promptPayload.bracketed);
+              return {};
+            }
             case 'send-input': {
-              const session = requireSession(cmd.name);
+              const before = orq().describeTerminals().find((t) => t.name === cmd.name);
+              let session = requireSession(cmd.name);
+              if (before?.unloaded || session.state === 'exited') {
+                session = await orq().restartTerminal(cmd.name);
+              }
               session.userInput(cmd.data);
               return {};
             }
@@ -1437,7 +1500,12 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
   return {
     handle,
     unloadIdleTerminals: () => orq().unloadIdleTerminals(),
-    dispatchForTest: (method, params, caller) => orquestra.dispatchForTest(method, params, caller, new AbortController().signal),
+    dispatchForTest: async (method: any, params: any, caller?: any) => {
+      if (typeof method === 'string' && method.startsWith('score.')) {
+        return (handlers as any)[method](params);
+      }
+      return orquestra.dispatchForTest(method, params, caller ?? { session: 'main' }, new AbortController().signal);
+    },
     cancelWork: async () => { await project?.flow?.cancel(); },
     async close() {
       for (const [id, pending] of [...portalCalls]) { opts.send({ kind: 'portal-cancel', id }); pending.reject(new OrqError('APP_UNAVAILABLE', 'Workspace encerrado.')); }

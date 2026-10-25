@@ -11,6 +11,18 @@ export type Bridge = {
   close?: () => Promise<void>;
 };
 
+/**
+ * Constrói sequência segura de prompt com Escape preliminar e Bracketed Paste,
+ * impedindo que CLIs como `agy` interpretem letras iniciais como comandos de tela.
+ */
+export function formatBracketedPrompt(text: string): { escape: string; bracketed: string; full: string } {
+  return {
+    escape: '\x1b',
+    bracketed: `\x1b[200~${text}\x1b[201~\r`,
+    full: `\x1b\x1b[200~${text}\x1b[201~\r`,
+  };
+}
+
 export function defaultControlPipePath(username?: string): string {
   const user = username || ((): string => {
     try {
@@ -63,15 +75,28 @@ export function startControlPipeServer(opts: ControlPipeServerOptions): ControlP
         const trimmed = line.trim();
         if (!trimmed) continue;
         try {
-          const reply = await opts.bridge.handle(trimmed);
-          if (reply !== undefined && !socket.destroyed) {
-            socket.write(JSON.stringify(reply) + '\n');
-          }
+          let payloadToHandle: unknown = trimmed;
           let parsed: any;
           try {
             parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === 'object') {
+              if (parsed.action && !parsed.type) {
+                parsed.type = parsed.action;
+              }
+              if (parsed.type === 'send-prompt') {
+                if (!parsed.name && parsed.terminal) parsed.name = parsed.terminal;
+                if (!parsed.text && parsed.prompt) parsed.text = parsed.prompt;
+                if (!parsed.text && parsed.data) parsed.text = parsed.data;
+              }
+              payloadToHandle = parsed;
+            }
           } catch {}
-          if (parsed && (parsed.type === 'shutdown' || parsed.kind === 'shutdown')) {
+
+          const reply = await opts.bridge.handle(payloadToHandle as any);
+          if (reply !== undefined && !socket.destroyed) {
+            socket.write(JSON.stringify(reply) + '\n');
+          }
+          if (parsed && (parsed.type === 'shutdown' || parsed.kind === 'shutdown' || parsed.action === 'shutdown')) {
             opts.onShutdown?.();
           }
         } catch (err) {

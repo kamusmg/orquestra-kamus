@@ -215,6 +215,8 @@ export async function createOrquestra(opts: OrquestraOptions): Promise<Orquestra
       terminalName: input.name,
       terminalId: id,
       regente: input.regente ?? false,
+      resume,
+      args: input.args,
     });
     const args = input.args ?? [];
     const env = prependPath({ ...childEnv(process.env), ...launch.env, ORQ_PIPE: opts.pipePath, ORQ_TOKEN: token }, binDir);

@@ -299,6 +299,17 @@ export async function startWorkspaceManager(opts: HostBridgeOptions & { maxWorks
               if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');
               return call(targetBridge, 'terminal.input', { name: cmd.name, data: cmd.data });
             }
+            case 'send-prompt': {
+              const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
+              if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');
+              const response = await targetBridge.handle(cmd);
+              if (response && typeof response === 'object' && 'ok' in response) {
+                const resp = response as { ok: boolean; result?: unknown; error?: { code: string; message: string } };
+                if (!resp.ok) throw new OrqError((resp.error?.code as any) ?? 'INTERNAL', resp.error?.message ?? 'Falha ao enviar prompt');
+                return resp.result;
+              }
+              return response;
+            }
             case 'read-output': {
               const targetBridge = cmd.workspace ? entries.get(cmd.workspace)?.bridge : (selectedId ? entries.get(selectedId)?.bridge : globalBridge);
               if (!targetBridge) throw new OrqError('NOT_FOUND', 'Workspace não encontrado.');

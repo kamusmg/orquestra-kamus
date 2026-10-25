@@ -22,6 +22,8 @@ export type LaunchContext = {
   /** Identidade e papel que continuam disponíveis ao retomar o terminal. */
   terminalName?: string;
   regente?: boolean;
+  resume?: boolean;
+  args?: string[];
 };
 
 /** agentSessionId: id já conhecido no lançamento (o Claude nasce com --session-id). */

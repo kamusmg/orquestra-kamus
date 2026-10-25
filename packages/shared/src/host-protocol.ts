@@ -432,6 +432,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ id: cmdId, type: z.literal('unload-terminal'), name: z.string(), workspace: cmdWorkspace }),
   z.object({ id: cmdId, type: z.literal('restart-terminal'), name: z.string(), workspace: cmdWorkspace }),
   z.object({ id: cmdId, type: z.literal('send-input'), name: z.string(), data: z.string(), workspace: cmdWorkspace }),
+  z.object({ id: cmdId, type: z.literal('send-prompt'), name: z.string(), text: z.string(), workspace: cmdWorkspace }),
   z.object({ id: cmdId, type: z.literal('read-output'), name: z.string(), lines: z.number().int().positive().optional(), workspace: cmdWorkspace }),
   z.object({ id: cmdId, type: z.literal('shutdown') }),
 ]);
@@ -446,6 +447,7 @@ export type HostCommand =
   | { id: number | string; type: 'unload-terminal'; name: string; workspace?: string }
   | { id: number | string; type: 'restart-terminal'; name: string; workspace?: string }
   | { id: number | string; type: 'send-input'; name: string; data: string; workspace?: string }
+  | { id: number | string; type: 'send-prompt'; name: string; text: string; workspace?: string }
   | { id: number | string; type: 'read-output'; name: string; lines?: number; workspace?: string }
   | { id: number | string; type: 'shutdown' };
 

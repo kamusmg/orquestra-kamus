@@ -8,8 +8,8 @@ import { silentLogger } from '../../core/src/log.js';
 import { createFakeAdapter } from '../../core/test/helpers/fake-adapter.js';
 import { FakePtyHost } from '../../core/test/helpers/fake-pty-host.js';
 import { waitFor } from '../../core/test/helpers/wait.js';
-import { startHostBridge, extractModelVersion, resolveAutoModelArgs } from '../src/bridge.js';
-import { startControlPipeServer, type ControlPipeServer, type Bridge } from '../src/control-pipe.js';
+import { startHostBridge, extractModelVersion, resolveAutoModelArgs, ensureAgyDefaultModel } from '../src/bridge.js';
+import { startControlPipeServer, formatBracketedPrompt, type ControlPipeServer, type Bridge } from '../src/control-pipe.js';
 
 describe('Control Pipe Server', () => {
   let server: ControlPipeServer | undefined;
@@ -285,5 +285,198 @@ describe('Control Pipe Server', () => {
       `--model=${lead}`,
     ]);
     expect(resolveAutoModelArgs(undefined, flash, lead)).toBeUndefined();
+  });
+
+  it('ensureAgyDefaultModel injects permissions, mode and flash model for agy subalterns', () => {
+    // Subaltern agy with no args -> defaults to dangerously-skip-permissions, mode accept-edits, flash model
+    expect(ensureAgyDefaultModel('agy', false, undefined, 'gemini-3.8-flash-high')).toEqual([
+      '--dangerously-skip-permissions',
+      '--mode',
+      'accept-edits',
+      '--model',
+      'gemini-3.8-flash-high',
+    ]);
+    expect(ensureAgyDefaultModel('agy', false, [], 'gemini-3.8-flash-high')).toEqual([
+      '--dangerously-skip-permissions',
+      '--mode',
+      'accept-edits',
+      '--model',
+      'gemini-3.8-flash-high',
+    ]);
+    expect(ensureAgyDefaultModel('agy', false, ['--verbose'], 'gemini-3.8-flash-high')).toEqual([
+      '--verbose',
+      '--dangerously-skip-permissions',
+      '--mode',
+      'accept-edits',
+      '--model',
+      'gemini-3.8-flash-high',
+    ]);
+
+    // Subaltern agy with accidental --yolo -> strips --yolo and injects correct flags
+    expect(ensureAgyDefaultModel('agy', false, ['--yolo'], 'gemini-3.8-flash-high')).toEqual([
+      '--dangerously-skip-permissions',
+      '--mode',
+      'accept-edits',
+      '--model',
+      'gemini-3.8-flash-high',
+    ]);
+
+    // Subaltern agy with explicit model -> preserves explicit model but adds permissions and mode
+    expect(ensureAgyDefaultModel('agy', false, ['--model', 'custom-model'], 'gemini-3.8-flash-high')).toEqual([
+      '--model',
+      'custom-model',
+      '--dangerously-skip-permissions',
+      '--mode',
+      'accept-edits',
+    ]);
+    expect(ensureAgyDefaultModel('agy', false, ['--model=gemini-4-argon-high', '--dangerously-skip-permissions'], 'gemini-3.8-flash-high')).toEqual([
+      '--model=gemini-4-argon-high',
+      '--dangerously-skip-permissions',
+      '--mode',
+      'accept-edits',
+    ]);
+
+    // Regent agy -> does not inject default subaltern flags
+    expect(ensureAgyDefaultModel('agy', true, undefined, 'gemini-3.8-flash-high')).toEqual([]);
+    expect(ensureAgyDefaultModel('agy', true, ['--test'], 'gemini-3.8-flash-high')).toEqual(['--test']);
+    // But strips --yolo if present
+    expect(ensureAgyDefaultModel('agy', true, ['--test', '--yolo'], 'gemini-3.8-flash-high')).toEqual(['--test']);
+
+    // Non-agy agents -> does not inject
+    expect(ensureAgyDefaultModel('claude', false, undefined, 'gemini-3.8-flash-high')).toBeUndefined();
+    expect(ensureAgyDefaultModel('shell', false, ['--flag'], 'gemini-3.8-flash-high')).toEqual(['--flag']);
+  });
+
+  it('formatBracketedPrompt formats prompt with escape and bracketed paste', () => {
+    const formatted = formatBracketedPrompt('corrigir bug de diff');
+    expect(formatted.escape).toBe('\x1b');
+    expect(formatted.bracketed).toBe('\x1b[200~corrigir bug de diff\x1b[201~\r');
+    expect(formatted.full).toBe('\x1b\x1b[200~corrigir bug de diff\x1b[201~\r');
+  });
+
+  it('send-prompt restarts exited/unloaded terminal and writes bracketed prompt with escape', async () => {
+    const pipePath = process.platform === 'win32'
+      ? `\\\\.\\pipe\\orquestra-ctrl-test-${randomUUID()}`
+      : `/tmp/orquestra-ctrl-test-${randomUUID()}.sock`;
+
+    const projectDir = mkdtempSync(join(tmpdir(), 'orq-pipe-prompt-'));
+    mkdirSync(join(projectDir, '.orquestra'), { recursive: true });
+    writeFileSync(join(projectDir, '.orquestra', 'workspace.json'), JSON.stringify({
+      schemaVersion: 1,
+      terminals: [],
+      notes: [],
+      connections: [],
+      layout: {},
+      viewport: { x: 0, y: 0, zoom: 1 },
+    }));
+
+    const fakePtyHost = new FakePtyHost();
+    const agyHooksDir = mkdtempSync(join(tmpdir(), 'orq-agy-hooks-'));
+    const agyHooksFile = join(agyHooksDir, 'hooks.json');
+    writeFileSync(agyHooksFile, JSON.stringify({
+      orquestra: { Stop: [{ type: 'command', command: 'node C:/orq/bin/orq.mjs hook agy Stop', timeout: 10 }] },
+    }));
+
+    const bridge = await startHostBridge({
+      send: () => {},
+      adapters: {
+        claude: { ...createFakeAdapter(), kind: 'claude' },
+        agy: { ...createFakeAdapter(), kind: 'agy' },
+        shell: createFakeAdapter(),
+      },
+      recentFile: join(mkdtempSync(join(tmpdir(), 'orq-recent-')), 'recent.json'),
+      settingsFile: join(mkdtempSync(join(tmpdir(), 'orq-settings-')), 'settings.json'),
+      personasFile: join(mkdtempSync(join(tmpdir(), 'orq-personas-')), 'personas.json'),
+      cliScript: 'C:/orq/bin/orq.mjs',
+      pipePath: `\\\\.\\pipe\\orq-unit-${randomUUID()}`,
+      dataDir: mkdtempSync(join(tmpdir(), 'orq-bridge-')),
+      log: silentLogger(),
+      ptyHost: fakePtyHost,
+      readyQuietMs: 20,
+      agyHooksFile,
+    } as any);
+
+    server = startControlPipeServer({
+      bridge,
+      pipePath,
+      log: silentLogger(),
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Open project
+    await bridge.handle({
+      kind: 'command',
+      id: 'open-1',
+      method: 'project.open',
+      params: { dir: projectDir },
+    });
+
+    // 1) Create agy subaltern via pipe without --model -> auto-injects default flash model
+    const createRes = await sendCommand(pipePath, {
+      id: 50,
+      type: 'create-terminal',
+      name: 'flash-qa-sec',
+      agent: 'agy',
+      regente: false,
+    });
+    expect(createRes).toMatchObject({
+      id: 50,
+      ok: true,
+      result: {
+        name: 'flash-qa-sec',
+        agent: 'agy',
+        args: expect.arrayContaining([
+          '--dangerously-skip-permissions',
+          '--mode',
+          'accept-edits',
+          '--model',
+          'gemini-3.8-flash-high',
+        ]),
+      },
+    });
+
+    const initialPty = fakePtyHost.last();
+
+    // 2) Simulate terminal exiting (e.g. process terminated or crashed in diff screen)
+    initialPty.emitExit(0);
+
+    // 3) Send prompt via send-prompt command (with action/alias normalization)
+    const promptRes = await sendCommand(pipePath, {
+      id: 51,
+      action: 'send-prompt',
+      terminal: 'flash-qa-sec',
+      prompt: 'continue o teste de seguranca',
+    });
+    expect(promptRes).toMatchObject({
+      id: 51,
+      ok: true,
+    });
+
+    // The terminal should have restarted (new PTY spawned)
+    const restartedPty = fakePtyHost.last();
+    expect(restartedPty).not.toBe(initialPty);
+
+    // Verify written data includes Escape and Bracketed Paste
+    expect(restartedPty.written).toContain('\x1b');
+    expect(restartedPty.written).toContain('\x1b[200~continue o teste de seguranca\x1b[201~\r');
+
+    // 4) Test update-terminal on an exited terminal restarts PTY
+    restartedPty.emitExit(0);
+    const updateRes = await sendCommand(pipePath, {
+      id: 52,
+      type: 'update-terminal',
+      name: 'flash-qa-sec',
+      agent: 'claude',
+    });
+    expect(updateRes).toMatchObject({
+      id: 52,
+      ok: true,
+      result: { name: 'flash-qa-sec', agent: 'claude' },
+    });
+    const reSwappedPty = fakePtyHost.last();
+    expect(reSwappedPty).not.toBe(restartedPty);
+
+    await bridge.close();
   });
 });

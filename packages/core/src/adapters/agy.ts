@@ -51,7 +51,21 @@ export const agyAdapter: AgentAdapter = {
   ],
   // Hooks vêm do arquivo global (agy não tem config por sessão): ver agy-hooks.ts.
   // O histórico do agy é global: --conversation funciona em qualquer pasta.
-  launch: (ctx) => ({ command: 'agy', args: ctx.resumeSessionId ? ['--conversation', ctx.resumeSessionId] : [], env: {} }),
+  launch: (ctx) => {
+    let args: string[] = [];
+    if (ctx.resumeSessionId) {
+      args = ['--conversation', ctx.resumeSessionId];
+    } else if (ctx.resume === true) {
+      const explicitArgs = ctx.args ?? [];
+      const hasContinue = explicitArgs.some(
+        (a) => a === '--continue' || a === '-c' || a === '--conversation' || a.startsWith('--conversation='),
+      );
+      if (!hasContinue) {
+        args = ['--continue'];
+      }
+    }
+    return { command: 'agy', args, env: {} };
+  },
   interpretHook: (event, payload): HookSignal => {
     if (event !== 'Stop') return { kind: 'ignored' };
     const parsed = stopPayload.safeParse(payload);
