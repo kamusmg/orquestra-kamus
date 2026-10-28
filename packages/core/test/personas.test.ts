@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { silentLogger } from '../src/log.js';
-import { DEFAULT_GLOBAL_PERSONAS, PersonaStore } from '../src/personas.js';
+import { buildDefaultGlobalPersonas, PersonaStore } from '../src/personas.js';
 
 const file = () => join(mkdtempSync(join(tmpdir(), 'orq-personas-')), 'personas.json');
 
@@ -26,21 +26,14 @@ describe('PersonaStore', () => {
     expect(new PersonaStore({ file: path, log: silentLogger() }).list()).toEqual([]);
   });
 
-  it('inicializa personas padrão com nome configurável por ORQ_USER_NAME', () => {
-    const prevUser = process.env.ORQ_USER_NAME;
-    try {
-      process.env.ORQ_USER_NAME = 'Bob Dev';
-      // Bob Dev sanitizado -> bob-dev-security
-      const securityPersona = DEFAULT_GLOBAL_PERSONAS.find((p) => p.name === 'bob-dev-security');
-      expect(securityPersona).toBeDefined();
-      expect(securityPersona?.text).toContain('REGRA ZERO');
+  it('inicializa personas padrão com persona neutra regra-zero', () => {
+    const personas = buildDefaultGlobalPersonas();
+    const regraZero = personas.find((p) => p.name === 'regra-zero');
+    expect(regraZero).toBeDefined();
+    expect(regraZero?.text).toContain('REGRA ZERO');
 
-      const path = file();
-      const store = new PersonaStore({ file: path, log: silentLogger(), defaults: true });
-      expect(store.get('bob-dev-security')).toBeDefined();
-    } finally {
-      if (prevUser !== undefined) process.env.ORQ_USER_NAME = prevUser;
-      else delete process.env.ORQ_USER_NAME;
-    }
+    const path = file();
+    const store = new PersonaStore({ file: path, log: silentLogger(), defaults: true });
+    expect(store.get('regra-zero')).toBeDefined();
   });
 });

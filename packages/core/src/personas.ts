@@ -3,20 +3,13 @@ import { dirname } from 'node:path';
 import { z } from 'zod';
 import { personaSchema, type Persona } from '@orquestra/shared';
 import type { Logger } from './log.js';
-import { resolveUserName } from './cyberdeck.js';
 
 const personasFileSchema = z.array(personaSchema);
 
-export function resolveSafeUserName(): string {
-  const raw = resolveUserName().trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
-  return raw || 'user';
-}
-
 export function buildDefaultGlobalPersonas(): Persona[] {
-  const safeUser = resolveSafeUserName();
   return [
     {
-      name: `${safeUser}-security`,
+      name: 'regra-zero',
       text: `REGRA ZERO: Segurança Absoluta com Git e Chaves de API.
 1. NUNCA usar 'git add .' ou 'git add -A'. Adicionar apenas os arquivos explicitamente modificados um a um.
 2. Inspecionar o diff ('git diff') antes de qualquer commit para certificar 100% de que nenhuma chave, token, senha ou arquivo de ambiente (.env) está sendo incluído.
@@ -42,23 +35,6 @@ Analise código buscando:
     }
   ];
 }
-
-export const DEFAULT_GLOBAL_PERSONAS: Persona[] = new Proxy([] as Persona[], {
-  get(_target, prop, receiver) {
-    const list = buildDefaultGlobalPersonas();
-    const val = Reflect.get(list, prop, receiver);
-    return typeof val === 'function' ? val.bind(list) : val;
-  },
-  has(_target, prop) {
-    return Reflect.has(buildDefaultGlobalPersonas(), prop);
-  },
-  ownKeys(_target) {
-    return Reflect.ownKeys(buildDefaultGlobalPersonas());
-  },
-  getOwnPropertyDescriptor(_target, prop) {
-    return Reflect.getOwnPropertyDescriptor(buildDefaultGlobalPersonas(), prop);
-  },
-});
 
 export class PersonaStore {
   constructor(private readonly opts: { file: string; log: Logger; defaults?: boolean }) {

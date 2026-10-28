@@ -14,6 +14,7 @@ export function resolveUserName(): string {
   try {
     return userInfo().username;
   } catch {
+    // userInfo() lança em contas sem diretório home ou ambientes restritos
     return 'user';
   }
 }
@@ -22,18 +23,11 @@ export function resolveEditionName(): string {
   return process.env.ORQ_EDITION_NAME || '';
 }
 
-let defaultUserNameOverride: string | null = null;
-
 export const DEFAULT_CYBERDECK_CONFIG: CyberdeckConfig = {
   tailscaleIp: '100.109.72.118',
   sshPort: 8022,
   deviceModel: 'Redmi Note 7 (lavender)',
-  get userName() {
-    return defaultUserNameOverride ?? resolveUserName();
-  },
-  set userName(value: string) {
-    defaultUserNameOverride = value;
-  },
+  userName: resolveUserName(),
 };
 
 /**

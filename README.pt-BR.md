@@ -36,7 +36,7 @@ Esta **Kamus Edition** nasceu do uso diário intenso do Orquestra e adiciona cam
 - 🌳 **Pisos Isolados com Git Worktrees (`orq floor` / `--floor`):** Crie árvores de trabalho Git isoladas (`.orquestra/floors/<piso>`) para que múltiplos agentes editem e testem branches distintas em paralelo sem colisão de arquivos.
 - 📱 **Automação Android Nativa (`orq android` / `orq portal devices`):** Integração direta com `adb` e `uiautomator` para inspecionar a árvore de acessibilidade com seletores (`@e1`, `@e2`), tocar, digitar, enviar teclas físicas e capturar screenshots em PNG.
 - ⏰ **Rotinas Agendadas (`orq routine`):** Agendador cron/intervalo (`--every 30m`, `--daily 09:00`) com suporte a scripts `pre-run` e injeção dinâmica de saída (`{{output}}`).
-- 🛡️ **Regra Zero de Segurança e Git:** Personas nativas (`kamus-security`, `exec-backend-systems`, `exec-frontend-ui`, `exec-qa-security`) que proíbem `git add .`, auditam `git diff --cached` contra vazamento de chaves/tokens e padronizam commits.
+- 🛡️ **Regra Zero de Segurança e Git:** Personas nativas (`regra-zero`, `exec-backend-systems`, `exec-frontend-ui`, `exec-qa-security`) que proíbem `git add .`, auditam `git diff --cached` contra vazamento de chaves/tokens e padronizam commits.
 
 ---
 

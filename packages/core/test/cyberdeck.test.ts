@@ -4,6 +4,7 @@ import {
   buildOrquestraStreamdeckButtons,
   checkCyberdeckOnline,
   DEFAULT_CYBERDECK_CONFIG,
+  resolveUserName,
 } from '../src/cyberdeck.js';
 
 describe('Cyberdeck Module', () => {
@@ -11,6 +12,7 @@ describe('Cyberdeck Module', () => {
     expect(DEFAULT_CYBERDECK_CONFIG.tailscaleIp).toBe('100.109.72.118');
     expect(DEFAULT_CYBERDECK_CONFIG.sshPort).toBe(8022);
     expect(DEFAULT_CYBERDECK_CONFIG.deviceModel).toContain('Redmi Note 7');
+    expect(DEFAULT_CYBERDECK_CONFIG.userName).toBeTruthy();
   });
 
   it('generates streamdeck button definitions', () => {
@@ -44,7 +46,7 @@ describe('Cyberdeck Module', () => {
       process.env.ORQ_USER_NAME = 'alice';
       process.env.ORQ_EDITION_NAME = 'Custom Edition';
 
-      expect(DEFAULT_CYBERDECK_CONFIG.userName).toBe('alice');
+      expect(resolveUserName()).toBe('alice');
       const skillWithEdition = buildCorvoOrquestraSkill();
       expect(skillWithEdition).toContain('description: "Controlar e monitorar agentes do Orquestra Custom Edition no PC');
       expect(skillWithEdition).toContain('# Orquestra Custom Edition — Integração Corvo');
