@@ -54,6 +54,13 @@ describe('claudeAdapter', () => {
     expect(claudeAdapter.screenRules.filter((rule) => rule.pattern.test(line)).map((rule) => rule.signal)).toEqual(['interrupted']);
   });
 
+  it('readyPattern reconhece caixa de entrada e prompt do Claude', () => {
+    const pattern = claudeAdapter.readyPattern!;
+    expect(pattern.test('╭────────────────────────╮\n│ >                      │\n╰────────────────────────╯')).toBe(true);
+    expect(pattern.test('❯ ')).toBe(true);
+    expect(pattern.test('carregando...')).toBe(false);
+  });
+
   it('Notification vira espera do usuário e payload estranho é ignorado', () => {
     expect(claudeAdapter.interpretHook('Notification', { message: 'precisa de permissão' })).toEqual({
       kind: 'waiting',
@@ -115,6 +122,13 @@ describe('agyAdapter', () => {
     expect(match('Requesting permission for:\n   Get-ChildItem')).toEqual(['waiting']);
     expect(match('⎿  Interrupted · What should Antigravity CLI do instead?')).toEqual(['interrupted']);
   });
+
+  it('readyPattern reconhece caixa de entrada e prompt do agy', () => {
+    const pattern = agyAdapter.readyPattern!;
+    expect(pattern.test('╭────────────────────────╮\n│ >                      │\n╰────────────────────────╯')).toBe(true);
+    expect(pattern.test('> ')).toBe(true);
+    expect(pattern.test('iniciando agy...')).toBe(false);
+  });
 });
 
 describe('codexAdapter', () => {
@@ -129,6 +143,13 @@ describe('codexAdapter', () => {
     expect(signals('  Trust this folder? Codex can read, edit, and run files here, subject to your')).toEqual(['waiting']);
     expect(signals('  Worked for 1m 21s • 17:19')).toEqual([]);
     expect(signals('■ Conversation interrupted - use /feedback if something went wrong')).toEqual([]);
+  });
+
+  it('readyPattern reconhece prompt do codex', () => {
+    const pattern = codexAdapter.readyPattern!;
+    expect(pattern.test('› ')).toBe(true);
+    expect(pattern.test('> ')).toBe(true);
+    expect(pattern.test('executando...')).toBe(false);
   });
 });
 

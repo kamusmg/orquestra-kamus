@@ -6,6 +6,7 @@ function tomlString(value: string): string { return JSON.stringify(value); }
 export const codexAdapter: AgentAdapter = {
   kind: 'codex',
   acceptsPrompts: true,
+  readyPattern: /(?:[>❯›]\s*$|╭[─-]|╰[─-])/m,
   screenRules: [
     { pattern: /Hooks need review[\s\S]*1\. Review hooks[\s\S]*2\. Trust all and continue[\s\S]*3\. Continue without trusting \(hooks won't run\)/, signal: 'waiting', scope: 'visible' },
     { pattern: /Would you like to run|Do you trust|Trust this folder\?|Approve this/, signal: 'waiting', scope: 'visible' },
