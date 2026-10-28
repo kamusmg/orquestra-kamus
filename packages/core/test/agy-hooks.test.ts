@@ -3,15 +3,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { agyStopHookCommand, ensureAgyGlobalHook } from '../src/agy-hooks.js';
+import { resolveNodeBinary } from '../src/resolve-exe.js';
 
-const command = 'node C:/orq/bin/orq.mjs hook agy Stop';
+const command = agyStopHookCommand('C:/orq/bin/orq.mjs');
 const fileIn = () => join(mkdtempSync(join(tmpdir(), 'orq-agy-')), 'config', 'hooks.json');
 
 describe('ensureAgyGlobalHook', () => {
-  it('monta o comando Stop sem aspas e recusa caminhos incompatíveis com o agy', () => {
-    expect(agyStopHookCommand('C:/orq/bin/orq.mjs')).toBe('node C:/orq/bin/orq.mjs hook agy Stop');
-    expect(() => agyStopHookCommand('C:/Program Files/orq.mjs')).toThrow();
-    expect(() => agyStopHookCommand('C:/orq/"bin"/orq.mjs')).toThrow();
+  it('monta o comando Stop com caminho absoluto e aspas duplas, inclusive em caminhos com espaços', () => {
+    const node = resolveNodeBinary();
+    expect(agyStopHookCommand('C:/orq/bin/orq.mjs')).toBe(`"${node}" "C:/orq/bin/orq.mjs" hook agy Stop`);
+    expect(agyStopHookCommand('C:/Program Files/orq.mjs')).toBe(`"${node}" "C:/Program Files/orq.mjs" hook agy Stop`);
+    expect(agyStopHookCommand('"C:/Program Files/orq.mjs"')).toBe(`"${node}" "C:/Program Files/orq.mjs" hook agy Stop`);
+    expect(agyStopHookCommand('D:/projetos D/orquestra/bin/orq.mjs')).toBe(`"${node}" "D:/projetos D/orquestra/bin/orq.mjs" hook agy Stop`);
   });
 
   it('substitui no arquivo o comando antigo com aspas pelo comando compatível com o agy', async () => {

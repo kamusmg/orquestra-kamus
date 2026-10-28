@@ -6,6 +6,7 @@ import { call, defaultFlowNode, type HostToMain } from '@orquestra/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentAdapter } from '../../core/src/adapters/types.js';
 import { silentLogger } from '../../core/src/log.js';
+import { resolveNodeBinary } from '../../core/src/resolve-exe.js';
 import { createFakeAdapter } from '../../core/test/helpers/fake-adapter.js';
 import { FakePtyHost } from '../../core/test/helpers/fake-pty-host.js';
 import { waitFor } from '../../core/test/helpers/wait.js';
@@ -302,7 +303,7 @@ describe('ponte do núcleo', () => {
     expect(await pending).toMatchObject({ kind: 'response-error', error: { code: 'USAGE', message: expect.stringMatching(/hook global/) } });
   });
 
-  it('instala o hook do agy no arquivo configurado sem aspas no comando', async () => {
+  it('instala o hook do agy no arquivo configurado com comando citado', async () => {
     const { command, sent, agyHooksFile } = await setup();
     await command('agy-project', 'project.open', { dir: mkdtempSync(join(tmpdir(), 'orq-proj-')) });
     const pending = command('agy-terminal', 'terminal.create', { name: 'B', agent: 'agy' });
@@ -311,8 +312,9 @@ describe('ponte do núcleo', () => {
     if (confirm?.kind !== 'confirm') throw new Error('Confirmação do hook do agy não chegou.');
     await bridge!.handle({ kind: 'confirm-reply', id: confirm.id, approved: true });
     expect(await pending).toMatchObject({ kind: 'response' });
+    const node = resolveNodeBinary();
     expect(JSON.parse(readFileSync(agyHooksFile, 'utf8'))).toEqual({
-      orquestra: { Stop: [{ type: 'command', command: 'node C:/orq/bin/orq.mjs hook agy Stop', timeout: 10 }] },
+      orquestra: { Stop: [{ type: 'command', command: `"${node}" "C:/orq/bin/orq.mjs" hook agy Stop`, timeout: 10 }] },
     });
   });
 

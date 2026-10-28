@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { resolveExecutable } from '../src/resolve-exe.js';
+import { resolveExecutable, resolveNodeBinary } from '../src/resolve-exe.js';
 
 describe('Codex com PATH do Explorer', () => {
   const home = mkdtempSync(join(tmpdir(), 'orq-codex-'));
@@ -28,5 +28,26 @@ describe('Codex com PATH do Explorer', () => {
     writeFileSync(launcher, '');
     const nodePath = join(prefix, 'node.exe');
     expect(resolveExecutable('codex', { where: () => [join(prefix, 'codex.cmd')], nodePath })).toEqual({ file: nodePath, argsPrefix: [launcher] });
+  });
+});
+
+describe('resolveNodeBinary', () => {
+  it('retorna process.execPath se for node real', () => {
+    expect(resolveNodeBinary()).toBe(process.execPath);
+  });
+
+  it('usa nodePath quando fornecido nas opções', () => {
+    expect(resolveNodeBinary({ nodePath: 'C:/custom/node.exe' })).toBe('C:/custom/node.exe');
+  });
+
+  it('resolve node no sistema se process.execPath for electron/outro executavel', () => {
+    const originalExecPath = process.execPath;
+    try {
+      Object.defineProperty(process, 'execPath', { value: 'C:/Electron/electron.exe', configurable: true });
+      const resolved = resolveNodeBinary({ where: () => ['C:/Program Files/nodejs/node.exe'] });
+      expect(resolved).toBe('C:/Program Files/nodejs/node.exe');
+    } finally {
+      Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
+    }
   });
 });

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { silentLogger } from '../src/log.js';
 import { createOrquestra, type Orquestra, type OrquestraEvent, type OrquestraOptions, type RegentHandler } from '../src/orquestra.js';
+import { resolveNodeBinary } from '../src/resolve-exe.js';
 import { createFakeAdapter } from './helpers/fake-adapter.js';
 import { FakePtyHost } from './helpers/fake-pty-host.js';
 import { waitFor } from './helpers/wait.js';
@@ -38,7 +39,8 @@ describe('Orquestra (PTY falso)', () => {
   it('hook aponta para o CLI inteiro quando a instalação tem espaços', async () => {
     const { orq, host } = await setupOrquestra({ cliScript: 'C:/Program Files/Orquestra/orq.mjs' });
     orq.createTerminal({ name: 'A', agent: 'fake', cwd: tmpdir() });
-    expect(host.spawned[0]!.spec.env.FAKE_HOOK_CMD).toBe('node "C:/Program Files/Orquestra/orq.mjs" hook fake Stop');
+    const node = resolveNodeBinary();
+    expect(host.spawned[0]!.spec.env.FAKE_HOOK_CMD).toBe(`"${node}" "C:/Program Files/Orquestra/orq.mjs" hook fake Stop`);
   });
 
   it('fila durante starting drena em ordem e publica contagem zero no fim', async () => {

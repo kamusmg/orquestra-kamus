@@ -4,16 +4,19 @@ import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { OrqError } from '@orquestra/shared';
 import { agyHookGroup } from './adapters/agy.js';
+import { resolveNodeBinary } from './resolve-exe.js';
 
 export const DEFAULT_AGY_HOOKS_FILE = join(homedir(), '.gemini', 'config', 'hooks.json');
 const GROUP = 'orquestra';
 
-/** O agy interpreta aspas como parte literal do caminho do executável. */
-export function agyStopHookCommand(cliScript: string): string {
-  if (/[\s"]/.test(cliScript)) {
-    throw new OrqError('USAGE', 'O caminho do script do Orquestra para o hook do agy não pode conter espaços ou aspas.');
-  }
-  return `node ${cliScript} hook agy Stop`;
+/**
+ * Monta o comando do hook de Stop do agy usando caminho absoluto do node e aspas duplas.
+ */
+export function agyStopHookCommand(cliScript: string, opts?: { nodeBinary?: string }): string {
+  const node = opts?.nodeBinary ?? resolveNodeBinary();
+  const cleanScript = cliScript.replace(/^"(.*)"$/, '$1');
+  const cleanNode = node.replace(/^"(.*)"$/, '$1');
+  return `"${cleanNode}" "${cleanScript}" hook agy Stop`;
 }
 
 /**
