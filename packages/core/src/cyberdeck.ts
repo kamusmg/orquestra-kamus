@@ -1,4 +1,5 @@
 import { Socket } from 'node:net';
+import { userInfo } from 'node:os';
 import { OrqError } from '@orquestra/shared';
 
 export interface CyberdeckConfig {
@@ -8,11 +9,25 @@ export interface CyberdeckConfig {
   userName: string;
 }
 
+export function resolveUserName(): string {
+  if (process.env.ORQ_USER_NAME) return process.env.ORQ_USER_NAME;
+  try {
+    return userInfo().username;
+  } catch {
+    // userInfo() lança em contas sem diretório home ou ambientes restritos
+    return 'user';
+  }
+}
+
+export function resolveEditionName(): string {
+  return process.env.ORQ_EDITION_NAME || '';
+}
+
 export const DEFAULT_CYBERDECK_CONFIG: CyberdeckConfig = {
   tailscaleIp: '100.109.72.118',
   sshPort: 8022,
   deviceModel: 'Redmi Note 7 (lavender)',
-  userName: 'kamus',
+  userName: resolveUserName(),
 };
 
 /**
@@ -93,9 +108,12 @@ export function buildOrquestraStreamdeckButtons() {
  * can operate and query Orquestra directly.
  */
 export function buildCorvoOrquestraSkill(): string {
+  const user = resolveUserName();
+  const edition = resolveEditionName();
+  const editionSuffix = edition ? ` ${edition}` : '';
   return `---
 name: orquestra
-description: "Controlar e monitorar agentes do Orquestra Kamus Edition no PC pelo ssh: status, floors, prompts e aprovações."
+description: "Controlar e monitorar agentes do Orquestra${editionSuffix} no PC pelo ssh: status, floors, prompts e aprovações."
 version: 1.0.0
 platforms: [linux, android]
 metadata:
@@ -103,7 +121,7 @@ metadata:
     tags: [orquestra, agentes, claude, agy, dev]
 ---
 
-# Orquestra Kamus Edition — Integração Corvo
+# Orquestra${editionSuffix} — Integração Corvo
 
 Acesso: \`ssh pc "<comando>"\` (Tailscale; Windows 11).
 
@@ -119,6 +137,6 @@ Acesso: \`ssh pc "<comando>"\` (Tailscale; Windows 11).
 
 ## Regras
 - Nunca crie floors com nomes genéricos; use o padrão \`feat/<ticket>\` ou \`fix/<nome>\`.
-- Sempre reporte para o Kamus no Telegram o resumo do status retornado pelos agentes.
+- Sempre reporte para o ${user} no Telegram o resumo do status retornado pelos agentes.
 `;
 }

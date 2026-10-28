@@ -28,7 +28,7 @@ Esta **Kamus Edition** nasceu do uso diário intenso do Orquestra e adiciona cam
 - 🦀 **CLI Nativa de Controle em Rust (`orq-pc.exe`):** Binário nativo (~400 KB) que conversa diretamente com o Named Pipe de controle do Host em `< 1 ms` para consultar telemetria (`status`), trocar agentes (`switch`), criar terminais (`new`), injetar prompts (`prompt`), ler buffers (`read`) e realizar **auto-restart silencioso** (`restart --resume-terminal`) sem abrir janelas de console (`CREATE_NO_WINDOW`) e sem roubar o foco de aplicações em tela cheia (`ORQ_NO_FOCUS=1`).
 - 🧹 **Economia Dupla de RAM (Descarregar Ociosos & Modo Headless):**
   - **Liberar RAM (`Ctrl+Shift+U` ou `orq-pc unload-idle`):** Encerra os processos PTY de todos os terminais `idle` preservando os cards e conexões no canvas para retomada sob demanda.
-  - **Modo Headless (`orq-pc headless` / `orq-pc gui`):** Fecha a interface gráfica Electron (liberando ~400–650 MB de RAM) mantendo o Host e todos os agentes vivos em segundo plano, com reconexão instantânea (*Hot-Attach*).
+  - **Modo Headless (`orq-pc headless` / `orq-pc gui`):** Fecha a interface gráfica Electron (liberando ~400–650 MB de RAM) mantendo o Host e todos os agentes vivos em segundo plano, com reconexão instantânea (*Hot-Attach*). *(Recurso experimental / não disponível ainda no momento).*
 - 🖼️ **Anexo de Prints com `Alt+V` & Drag-and-Drop nos Terminais:**
   - Tire um print no Windows (`Win+Shift+S` ou `PrintScreen`) e pressione **`Alt+V`** direto no terminal: o Orquestra captura o bitmap da área de transferência, salva em PNG temporário com *Garbage Collector* automático, exibe o chip `📎 [imagem]` e injeta o caminho pronto para o agente analisar (ou repassa o atalho nativamente quando o agente é `claude`).
   - Arraste uma ou mais imagens/arquivos do Windows Explorer diretamente para cima de qualquer terminal para injetar seus caminhos formatados.
@@ -36,7 +36,7 @@ Esta **Kamus Edition** nasceu do uso diário intenso do Orquestra e adiciona cam
 - 🌳 **Pisos Isolados com Git Worktrees (`orq floor` / `--floor`):** Crie árvores de trabalho Git isoladas (`.orquestra/floors/<piso>`) para que múltiplos agentes editem e testem branches distintas em paralelo sem colisão de arquivos.
 - 📱 **Automação Android Nativa (`orq android` / `orq portal devices`):** Integração direta com `adb` e `uiautomator` para inspecionar a árvore de acessibilidade com seletores (`@e1`, `@e2`), tocar, digitar, enviar teclas físicas e capturar screenshots em PNG.
 - ⏰ **Rotinas Agendadas (`orq routine`):** Agendador cron/intervalo (`--every 30m`, `--daily 09:00`) com suporte a scripts `pre-run` e injeção dinâmica de saída (`{{output}}`).
-- 🛡️ **Regra Zero de Segurança e Git:** Personas nativas (`kamus-security`, `exec-backend-systems`, `exec-frontend-ui`, `exec-qa-security`) que proíbem `git add .`, auditam `git diff --cached` contra vazamento de chaves/tokens e padronizam commits.
+- 🛡️ **Regra Zero de Segurança e Git:** Personas nativas (`regra-zero`, `exec-backend-systems`, `exec-frontend-ui`, `exec-qa-security`) que proíbem `git add .`, auditam `git diff --cached` contra vazamento de chaves/tokens e padronizam commits.
 
 ---
 

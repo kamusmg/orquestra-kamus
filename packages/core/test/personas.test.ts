@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { silentLogger } from '../src/log.js';
-import { PersonaStore } from '../src/personas.js';
+import { buildDefaultGlobalPersonas, PersonaStore } from '../src/personas.js';
 
 const file = () => join(mkdtempSync(join(tmpdir(), 'orq-personas-')), 'personas.json');
 
@@ -24,5 +24,16 @@ describe('PersonaStore', () => {
     const path = file();
     writeFileSync(path, '[{"name": "com espaço", "text": "x"}]');
     expect(new PersonaStore({ file: path, log: silentLogger() }).list()).toEqual([]);
+  });
+
+  it('inicializa personas padrão com persona neutra regra-zero', () => {
+    const personas = buildDefaultGlobalPersonas();
+    const regraZero = personas.find((p) => p.name === 'regra-zero');
+    expect(regraZero).toBeDefined();
+    expect(regraZero?.text).toContain('REGRA ZERO');
+
+    const path = file();
+    const store = new PersonaStore({ file: path, log: silentLogger(), defaults: true });
+    expect(store.get('regra-zero')).toBeDefined();
   });
 });
