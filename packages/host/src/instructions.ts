@@ -57,3 +57,46 @@ export function resolveSessionGuide(opts: {
 
   return base ? `${base}\n\n${cerebro}` : cerebro;
 }
+
+/**
+ * Envia o guia de sessão apenas para sessões novas (sem resume bem-sucedido)
+ * ou quando relançadas fresh, evitando poluir sessões que já possuem o histórico.
+ */
+export function briefIfFreshSession(opts: {
+  brief: (target: string, from: string, text: string) => void;
+  session: { name: string; adapter: { acceptsPrompts: boolean } };
+  agent: string;
+  isFresh: boolean;
+  unloaded?: boolean;
+  persona?: Persona | string | null;
+  regente?: boolean | null;
+  resolvePersona?: (name: string) => Persona | undefined;
+  log?: { warn: (obj: object, msg: string) => void };
+}): boolean {
+  if (!opts.isFresh || opts.unloaded || !opts.session.adapter.acceptsPrompts) {
+    return false;
+  }
+  let guide: string | undefined;
+  if (opts.persona) {
+    try {
+      const persona = typeof opts.persona === 'string' && opts.resolvePersona
+        ? opts.resolvePersona(opts.persona)
+        : (opts.persona as Persona);
+      if (persona) {
+        guide = resolveSessionGuide({ persona, regente: Boolean(opts.regente) });
+      }
+    } catch (error) {
+      opts.log?.warn({ err: error, terminal: opts.session.name, persona: opts.persona }, 'não foi possível resolver a função ao enviar guia');
+    }
+  } else if (opts.regente) {
+    guide = resolveSessionGuide({ regente: true });
+  } else if (['agy', 'claude', 'codex'].includes(opts.agent)) {
+    guide = getCerebroInstruction() ?? undefined;
+  }
+
+  if (guide) {
+    opts.brief(opts.session.name, 'Orquestra', guide);
+    return true;
+  }
+  return false;
+}

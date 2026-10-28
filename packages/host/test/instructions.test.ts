@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import {
   CEREBRO_TOKEN_ECONOMY_HEADER,
+  briefIfFreshSession,
   getCerebroInstruction,
   injectCerebroDirectives,
   resolveSessionGuide,
@@ -180,5 +181,65 @@ describe('Repasse de ORQ_CEREBRO_PATH para o PTY no HostBridge', () => {
     expect(ptyHost.spawned.length).toBeGreaterThan(0);
     const lastSpawned = ptyHost.spawned.at(-1)!;
     expect(lastSpawned.spec.env.ORQ_CEREBRO_PATH).toBe(cerebroDir);
+  });
+});
+
+describe('briefIfFreshSession', () => {
+  it('envia o guia quando a sessão é nova (isFresh: true)', () => {
+    const briefs: Array<{ target: string; from: string; text: string }> = [];
+    const brief = (target: string, from: string, text: string) => briefs.push({ target, from, text });
+    const session = { name: 'term-1', adapter: { acceptsPrompts: true } };
+
+    const sent = briefIfFreshSession({
+      brief,
+      session,
+      agent: 'claude',
+      isFresh: true,
+      persona: { name: 'revisor', text: 'Revise com cuidado.' },
+    });
+
+    expect(sent).toBe(true);
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]!.target).toBe('term-1');
+    expect(briefs[0]!.text).toContain('revisor');
+  });
+
+  it('NÃO envia o guia quando a sessão foi retomada (isFresh: false)', () => {
+    const briefs: Array<{ target: string; from: string; text: string }> = [];
+    const brief = (target: string, from: string, text: string) => briefs.push({ target, from, text });
+    const session = { name: 'term-1', adapter: { acceptsPrompts: true } };
+
+    const sent = briefIfFreshSession({
+      brief,
+      session,
+      agent: 'claude',
+      isFresh: false,
+      persona: { name: 'revisor', text: 'Revise com cuidado.' },
+    });
+
+    expect(sent).toBe(false);
+    expect(briefs).toHaveLength(0);
+  });
+
+  it('NÃO envia o guia se o terminal estiver unloaded ou o adapter não aceitar prompts', () => {
+    const briefs: Array<{ target: string; from: string; text: string }> = [];
+    const brief = (target: string, from: string, text: string) => briefs.push({ target, from, text });
+
+    expect(briefIfFreshSession({
+      brief,
+      session: { name: 'term-1', adapter: { acceptsPrompts: true } },
+      agent: 'claude',
+      isFresh: true,
+      unloaded: true,
+    })).toBe(false);
+
+    expect(briefIfFreshSession({
+      brief,
+      session: { name: 'term-shell', adapter: { acceptsPrompts: false } },
+      agent: 'shell',
+      isFresh: true,
+    })).toBe(false);
+
+    expect(briefs).toHaveLength(0);
   });
 });

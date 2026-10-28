@@ -54,6 +54,7 @@ export type OrquestraOptions = {
   regent?: RegentHandler;
   browser?: BrowserHandler;
   browserNodes?: () => BrowserNode[];
+  onRelaunchFresh?: (session: Session, config: Omit<TerminalDescriptor, 'name'>) => void;
 };
 
 export type OrquestraEvent =
@@ -338,10 +339,11 @@ export async function createOrquestra(opts: OrquestraOptions): Promise<Orquestra
     const neighbors = topology.neighbors(name);
     await removeTerminal(name, { announce: false });
     try {
-      createTerminal({ name, agent: config.agent, cwd: config.cwd, id: config.id, args: config.args, resume: config.resume, agentSessionId: null, regente: config.regente, persona: config.persona, monitor: config.monitor, sessionDirs: config.sessionDirs });
+      const session = createTerminal({ name, agent: config.agent, cwd: config.cwd, id: config.id, args: config.args, resume: config.resume, agentSessionId: null, regente: config.regente, persona: config.persona, monitor: config.monitor, sessionDirs: config.sessionDirs });
       for (const neighbor of neighbors) if (topology.kindOf(neighbor)) topology.connect(name, neighbor);
       emit({ type: 'notice', name, message: 'a sessão anterior não pôde ser retomada. O terminal começou uma sessão nova.' });
       emitState(name);
+      opts.onRelaunchFresh?.(session, config);
     } catch (error) {
       opts.log.error({ err: error, session: name }, 'falha ao relançar sem retomar');
       emit({ type: 'removed', name });

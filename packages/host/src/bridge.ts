@@ -34,7 +34,7 @@ import {
   type ModelEntry,
   type ModelListResult,
 } from '@orquestra/shared';
-import { getCerebroInstruction, resolveSessionGuide } from './instructions.js';
+import { briefIfFreshSession, getCerebroInstruction, resolveSessionGuide } from './instructions.js';
 import { formatBracketedPrompt } from './control-pipe.js';
 import { loadHostEnv } from './env-loader.js';
 import {
@@ -435,6 +435,26 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
     throw new OrqError('NOT_FOUND', `A função ${name} não existe. Veja as disponíveis com orq persona list.`);
   }
 
+  function sendBriefIfFresh(session: Session, target: {
+    agent: string;
+    isFresh: boolean;
+    unloaded?: boolean;
+    persona?: Persona | string | null;
+    regente?: boolean | null;
+  }): boolean {
+    return briefIfFreshSession({
+      brief: (t, from, text) => orquestra.brief(t, from, text),
+      session,
+      agent: target.agent,
+      isFresh: target.isFresh,
+      unloaded: target.unloaded,
+      persona: target.persona,
+      regente: target.regente,
+      resolvePersona,
+      log: opts.log,
+    });
+  }
+
   async function createTerminalFor(input: {
     id?: string;
     name: string;
@@ -646,6 +666,14 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
     regent,
     browser,
     browserNodes: () => project?.state.browserNodes() ?? [],
+    onRelaunchFresh: (session, config) => {
+      sendBriefIfFresh(session, {
+        agent: config.agent,
+        isFresh: true,
+        persona: config.persona,
+        regente: config.regente,
+      });
+    },
     onEvent: (event) => {
       if (event.type === 'output') return batcher.push(event.name, event.data);
       if (event.type === 'state') {
@@ -744,7 +772,7 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
     }
     for (const terminal of workspace.terminals) {
       try {
-        orquestra.createTerminal({
+        const session = orquestra.createTerminal({
           name: terminal.name,
           agent: terminal.agent,
           cwd: terminal.cwd,
@@ -757,6 +785,13 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
           monitor: terminal.monitor,
           unloaded: terminal.unloaded,
           sessionDirs: terminal.sessionDirs,
+        });
+        sendBriefIfFresh(session, {
+          agent: terminal.agent,
+          isFresh: !terminal.agentSessionId,
+          unloaded: terminal.unloaded,
+          persona: terminal.persona,
+          regente: terminal.regente,
         });
       } catch (error) {
         current.state.forget(terminal.name);
@@ -938,16 +973,12 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
         requireProject().state.grouping.assign(groupId, [{ kind: 'terminal', id: session.id }], groupElements());
         emitGroupLayout();
       }
-      if (session.adapter.acceptsPrompts) {
-        if (resolvedPersona) {
-          orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ persona: resolvedPersona, regente: Boolean(regente) })!);
-        } else if (regente) {
-          orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ regente: true })!);
-        } else if (['agy', 'claude', 'codex'].includes(agent)) {
-          const cerebroGuide = getCerebroInstruction();
-          if (cerebroGuide) orquestra.brief(session.name, 'Orquestra', cerebroGuide);
-        }
-      }
+      sendBriefIfFresh(session, {
+        agent,
+        isFresh: true,
+        persona: resolvedPersona ?? persona,
+        regente,
+      });
       return info(session);
     },
     'terminal.update': async ({ name, ...changes }) => {
@@ -1012,21 +1043,12 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
       opts.log.info({ terminal: name, method: 'terminal.restart' }, 'comando da interface');
       const before = orquestra.describeTerminals().find((terminal) => terminal.name === name);
       const session = await orquestra.restartTerminal(name);
-      if (before?.unloaded && !before?.agentSessionId && session.adapter.acceptsPrompts) {
-        if (before.persona) {
-          try {
-            const persona = resolvePersona(before.persona);
-            orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ persona, regente: before.regente })!);
-          } catch (error) {
-            opts.log.warn({ err: error, terminal: name, persona: before.persona }, 'não foi possível resolver a função ao reiniciar');
-          }
-        } else if (before.regente) {
-          orquestra.brief(session.name, 'Orquestra', resolveSessionGuide({ regente: true })!);
-        } else if (['agy', 'claude', 'codex'].includes(before.agent)) {
-          const cerebroGuide = getCerebroInstruction();
-          if (cerebroGuide) orquestra.brief(session.name, 'Orquestra', cerebroGuide);
-        }
-      }
+      sendBriefIfFresh(session, {
+        agent: before?.agent ?? session.adapter.kind,
+        isFresh: !before?.agentSessionId,
+        persona: before?.persona,
+        regente: before?.regente,
+      });
       recordPids();
       changed();
       return info(session);
@@ -1435,7 +1457,14 @@ export async function startHostBridge(opts: HostBridgeOptions): Promise<HostBrid
               return info(session);
             }
             case 'restart-terminal': {
+              const before = orq().describeTerminals().find((t) => t.name === cmd.name);
               const session = await orq().restartTerminal(cmd.name);
+              sendBriefIfFresh(session, {
+                agent: before?.agent ?? session.adapter.kind,
+                isFresh: !before?.agentSessionId,
+                persona: before?.persona,
+                regente: before?.regente,
+              });
               recordPids();
               changed();
               return info(session);
