@@ -15,6 +15,7 @@ import { resolveNodePath, whereNode } from './node-path';
 import { killRecordedAgents, taskkillTree } from './orphans';
 import { initPortalSystem } from './portal/portal-ipc';
 import type { PortalManager } from './portal/portal-manager';
+import { decideRendererRecovery, type CrashRecoveryState } from './recovery';
 
 const dataDir = process.env.ORQ_DATA_DIR ?? join(app.getPath('appData'), 'Orquestra');
 // Pasta de dados própria (testes, segunda cópia de desenvolvimento): a trava de instância única vale por pasta.
@@ -147,8 +148,26 @@ function createWindow(): BrowserWindow {
   created.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     log.error({ errorCode, errorDescription, validatedURL }, 'falha ao carregar a página do renderer');
   });
+  let recoveryState: CrashRecoveryState = { timestamps: [] };
   created.webContents.on('render-process-gone', (_event, details) => {
     log.error({ details }, 'processo do renderer encerrou inesperadamente');
+    const decision = decideRendererRecovery(details.reason, recoveryState);
+    recoveryState = decision.nextState;
+
+    if (decision.shouldReload) {
+      log.warn({ details, attempt: recoveryState.timestamps.length }, 'recarregando interface após encerramento inesperado do renderer');
+      setTimeout(() => {
+        if (!created.isDestroyed()) {
+          created.webContents.reload();
+        }
+      }, 1000);
+    } else if (details.reason !== 'clean-exit') {
+      log.error({ details }, 'limite de recargas do renderer excedido; exibindo diálogo de erro');
+      dialog.showErrorBox(
+        'Orquestra — Falha no processo da interface',
+        `A interface do Orquestra encerrou repetidamente (${details.reason}). Verifique os logs para mais detalhes.`,
+      );
+    }
   });
   const noFocus = process.env.ORQ_NO_FOCUS === '1';
   created.once('ready-to-show', () => {
