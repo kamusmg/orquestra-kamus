@@ -31,7 +31,7 @@ export function claudeHookSettings(hookCommand: (event: string) => string): obje
 export const claudeAdapter: AgentAdapter = {
   kind: 'claude',
   acceptsPrompts: true,
-  readyPattern: /(?:[>❯]\s*$|╭[─-]|╰[─-])/m,
+  readyPattern: /^[\s│]*[>❯›](?:\s|$)|\? for shortcuts/m,
   screenRules: [
     { pattern: /Yes, I trust this folder/, signal: 'waiting' },
     { pattern: /Do you want to (proceed|create|make this edit)/, signal: 'waiting' },

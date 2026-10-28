@@ -45,7 +45,7 @@ function writePromptFile(text: string, ctx: { cwd: string; askId: string }): str
 export const agyAdapter: AgentAdapter = {
   kind: 'agy',
   acceptsPrompts: true,
-  readyPattern: /(?:[>❯]\s*$|╭[─-]|╰[─-])/m,
+  readyPattern: /^[\s│]*[>❯›](?:\s|$)|\? for shortcuts/m,
   screenRules: [
     { pattern: /Requesting permission for:|Allow access to this file\?|Do you trust the contents of this project\?/, signal: 'waiting' },
     { pattern: /Interrupted · What should Antigravity CLI do instead\?/, signal: 'interrupted', scope: 'new-occurrence' },

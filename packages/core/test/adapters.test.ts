@@ -56,9 +56,12 @@ describe('claudeAdapter', () => {
 
   it('readyPattern reconhece caixa de entrada e prompt do Claude', () => {
     const pattern = claudeAdapter.readyPattern!;
-    expect(pattern.test('╭────────────────────────╮\n│ >                      │\n╰────────────────────────╯')).toBe(true);
+    // Tela real: prompt vazio entre linhas horizontais e rodapé de atalhos.
+    expect(pattern.test('────────\n> \n────────\n? for shortcuts')).toBe(true);
     expect(pattern.test('❯ ')).toBe(true);
     expect(pattern.test('carregando...')).toBe(false);
+    // Banner de boas-vindas não é prontidão: o campo de digitação ainda não existe.
+    expect(pattern.test('╭────────────╮\n│ Welcome to Claude Code │\n╰────────────╯')).toBe(false);
   });
 
   it('Notification vira espera do usuário e payload estranho é ignorado', () => {
@@ -125,9 +128,11 @@ describe('agyAdapter', () => {
 
   it('readyPattern reconhece caixa de entrada e prompt do agy', () => {
     const pattern = agyAdapter.readyPattern!;
-    expect(pattern.test('╭────────────────────────╮\n│ >                      │\n╰────────────────────────╯')).toBe(true);
+    // Tela real do agy: o prompt mostra texto de ajuda depois do '>'.
+    expect(pattern.test('> Accept-edits mode: file edits auto-approved (shift+tab to cycle)')).toBe(true);
     expect(pattern.test('> ')).toBe(true);
     expect(pattern.test('iniciando agy...')).toBe(false);
+    expect(pattern.test('cd <pasta> > log.txt')).toBe(false);
   });
 });
 
