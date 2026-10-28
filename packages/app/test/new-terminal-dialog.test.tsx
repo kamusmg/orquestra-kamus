@@ -51,17 +51,17 @@ describe('NewTerminalDialog (resposta assíncrona)', () => {
     expect(submitBtn.disabled).toBe(false);
   });
 
-  it('retomar sessão vem ligado e vai no onCreate; shell desabilita a opção', async () => {
+  it('retomar sessão vem desligado para terminal novo e vai no onCreate; shell desabilita a opção', async () => {
     const onCreate = vi.fn(async () => {});
     render(<NewTerminalDialog projectDir="C:/p" existingNames={[]} defaultArgs={{ claude: [], agy: [] }} onCancel={() => {}} onCreate={onCreate} />);
     const resume = screen.getByTestId('new-terminal-resume') as HTMLInputElement;
-    expect(resume.checked).toBe(true);
+    expect(resume.checked).toBe(false);
     fireEvent.click(screen.getByTestId('agent-shell'));
     expect(resume.disabled).toBe(true);
     fireEvent.click(screen.getByTestId('agent-claude'));
     fireEvent.click(resume);
     fireEvent.click(screen.getByTestId('new-terminal-submit'));
-    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ agent: 'claude', resume: false })));
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ agent: 'claude', resume: true })));
   });
 
   it('argumentos vêm do padrão do tipo e vão no onCreate', async () => {
