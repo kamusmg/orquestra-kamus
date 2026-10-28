@@ -36,4 +36,30 @@ describe('Cyberdeck Module', () => {
     const isOnline = await checkCyberdeckOnline('127.0.0.1', 59999, 100);
     expect(isOnline).toBe(false);
   });
+
+  it('configures user name and edition name via environment variables', () => {
+    const prevUser = process.env.ORQ_USER_NAME;
+    const prevEdition = process.env.ORQ_EDITION_NAME;
+    try {
+      process.env.ORQ_USER_NAME = 'alice';
+      process.env.ORQ_EDITION_NAME = 'Custom Edition';
+
+      expect(DEFAULT_CYBERDECK_CONFIG.userName).toBe('alice');
+      const skillWithEdition = buildCorvoOrquestraSkill();
+      expect(skillWithEdition).toContain('description: "Controlar e monitorar agentes do Orquestra Custom Edition no PC');
+      expect(skillWithEdition).toContain('# Orquestra Custom Edition — Integração Corvo');
+      expect(skillWithEdition).toContain('Sempre reporte para o alice no Telegram');
+
+      // Sem edição definida: omitir trecho
+      delete process.env.ORQ_EDITION_NAME;
+      const skillWithoutEdition = buildCorvoOrquestraSkill();
+      expect(skillWithoutEdition).toContain('description: "Controlar e monitorar agentes do Orquestra no PC');
+      expect(skillWithoutEdition).toContain('# Orquestra — Integração Corvo');
+    } finally {
+      if (prevUser !== undefined) process.env.ORQ_USER_NAME = prevUser;
+      else delete process.env.ORQ_USER_NAME;
+      if (prevEdition !== undefined) process.env.ORQ_EDITION_NAME = prevEdition;
+      else delete process.env.ORQ_EDITION_NAME;
+    }
+  });
 });
