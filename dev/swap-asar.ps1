@@ -1,4 +1,4 @@
-$res = "packages/app/release/win-unpacked/resources"
+$res = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\packages\app\release\win-unpacked\resources"))
 if (Test-Path "$res/app.asar.new") {
     Remove-Item -Force "$res/app.asar" -ErrorAction SilentlyContinue
     Move-Item -Force "$res/app.asar.new" "$res/app.asar"
