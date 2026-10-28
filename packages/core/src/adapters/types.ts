@@ -32,6 +32,7 @@ export type LaunchSpec = { command: string; args: string[]; env: Record<string, 
 export interface AgentAdapter {
   readonly kind: string;
   readonly acceptsPrompts: boolean;
+  readonly readyPattern?: RegExp;
   readonly screenRules: ScreenRule<ScreenSignal>[];
   launch(ctx: LaunchContext): LaunchSpec;
   interpretHook(event: string, payload: unknown): HookSignal;

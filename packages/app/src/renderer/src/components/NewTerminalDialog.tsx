@@ -79,7 +79,7 @@ export function NewTerminalDialog(props: {
   const [cwd, setCwd] = useState(props.projectDir);
   const defaultFor = (kind: HostAgent) => formatArgs(kind === 'shell' ? [] : props.defaultArgs[kind] ?? []);
   const [argsText, setArgsText] = useState(() => defaultFor('claude'));
-  const [resume, setResume] = useState(true);
+  const [resume, setResume] = useState(false);
   const [regente, setRegente] = useState(false);
   const [persona, setPersona] = useState('');
   const [monitor, setMonitor] = useState(() => defaultMonitor('claude'));

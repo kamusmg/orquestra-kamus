@@ -1,10 +1,34 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { OrqError } from '@orquestra/shared';
 
 export type ResolvedExecutable = { file: string; argsPrefix: string[] };
+
+/**
+ * Retorna o caminho absoluto do executável do Node.js.
+ * Usa process.execPath se for um executável real do Node (node / node.exe),
+ * caso contrário resolve o 'node' no sistema via resolveExecutable.
+ */
+export function resolveNodeBinary(deps: {
+  nodePath?: string;
+  where?: (name: string) => string[];
+  env?: NodeJS.ProcessEnv;
+} = {}): string {
+  if (deps.nodePath) return deps.nodePath;
+  const exec = process.execPath;
+  const base = basename(exec).toLowerCase();
+  if (base === 'node.exe' || base === 'node') {
+    return exec;
+  }
+  try {
+    const resolved = resolveExecutable('node', deps);
+    return resolved.file;
+  } catch {
+    return exec;
+  }
+}
 
 export function resolveExecutable(name: string, deps: {
   where?: (name: string) => string[];

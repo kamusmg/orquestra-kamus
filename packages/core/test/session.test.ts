@@ -476,4 +476,76 @@ describe('Session', () => {
     const { session } = setup();
     await expect(session.injectPrompt('x', 'a1')).rejects.toThrow(/não está ociosa/);
   });
+
+  describe('prontidão de inicialização', () => {
+    it('fica pronto imediatamente ao detectar marcador de prompt na tela via readyPattern', async () => {
+      const adapterWithPattern = testAdapter({ readyPattern: /(?:[>❯]\s*$|╭[─-]|╰[─-])/m });
+      const pty = new FakePty();
+      const session = new Session({
+        id: 'id-ready-pat',
+        name: 'Pat',
+        adapter: adapterWithPattern,
+        pty,
+        cwd: '.',
+        log: silentLogger(),
+        readyQuietMs: 10_000,
+        readyMinSpawnMs: 10_000,
+      });
+
+      expect(session.state).toBe('starting');
+      pty.emitData('Iniciando agente...\r\n╭─────────────────────╮\r\n│ >                   │\r\n╰─────────────────────╯\r\n');
+      await waitFor(() => session.state === 'idle', 1000);
+      expect(session.state).toBe('idle');
+      await session.kill();
+    });
+
+    it('espera silêncio após o tempo mínimo de spawn quando não há marcador de prompt', async () => {
+      const adapterWithoutPattern = testAdapter({ readyPattern: undefined });
+      const pty = new FakePty();
+      const session = new Session({
+        id: 'id-ready-quiet',
+        name: 'Quiet',
+        adapter: adapterWithoutPattern,
+        pty,
+        cwd: '.',
+        log: silentLogger(),
+        readyQuietMs: 50,
+        readyMinSpawnMs: 200,
+      });
+
+      expect(session.state).toBe('starting');
+      pty.emitData('Inicializando serviço em segundo plano...\r\n');
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      // Já se passaram 80ms (> 50ms de quiet), mas < 200ms de spawn: continua starting
+      expect(session.state).toBe('starting');
+
+      await waitFor(() => session.state === 'idle', 500);
+      expect(session.state).toBe('idle');
+      await session.kill();
+    });
+
+    it('declara pronto e loga warn ao atingir o teto de timeout', async () => {
+      const warnLines: Array<Record<string, unknown>> = [];
+      const log = pino({ level: 'warn' }, { write: (line: string) => void warnLines.push(JSON.parse(line)) });
+      const adapter = testAdapter({ readyPattern: undefined });
+      const pty = new FakePty();
+      const session = new Session({
+        id: 'id-ready-ceiling',
+        name: 'Ceiling',
+        adapter,
+        pty,
+        cwd: '.',
+        log,
+        readyQuietMs: 5000,
+        readyMinSpawnMs: 5000,
+        readyTimeoutMs: 150,
+      });
+
+      expect(session.state).toBe('starting');
+      await waitFor(() => session.state === 'idle', 1000);
+      expect(session.state).toBe('idle');
+      expect(warnLines).toContainEqual(expect.objectContaining({ msg: expect.stringContaining('teto de 20s') }));
+      await session.kill();
+    });
+  });
 });

@@ -6,6 +6,7 @@ import { call, defaultFlowNode, type HostToMain } from '@orquestra/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentAdapter } from '../../core/src/adapters/types.js';
 import { silentLogger } from '../../core/src/log.js';
+import { resolveNodeBinary } from '../../core/src/resolve-exe.js';
 import { createFakeAdapter } from '../../core/test/helpers/fake-adapter.js';
 import { FakePtyHost } from '../../core/test/helpers/fake-pty-host.js';
 import { waitFor } from '../../core/test/helpers/wait.js';
@@ -302,7 +303,7 @@ describe('ponte do núcleo', () => {
     expect(await pending).toMatchObject({ kind: 'response-error', error: { code: 'USAGE', message: expect.stringMatching(/hook global/) } });
   });
 
-  it('instala o hook do agy no arquivo configurado sem aspas no comando', async () => {
+  it('instala o hook do agy no arquivo configurado com comando citado', async () => {
     const { command, sent, agyHooksFile } = await setup();
     await command('agy-project', 'project.open', { dir: mkdtempSync(join(tmpdir(), 'orq-proj-')) });
     const pending = command('agy-terminal', 'terminal.create', { name: 'B', agent: 'agy' });
@@ -311,8 +312,9 @@ describe('ponte do núcleo', () => {
     if (confirm?.kind !== 'confirm') throw new Error('Confirmação do hook do agy não chegou.');
     await bridge!.handle({ kind: 'confirm-reply', id: confirm.id, approved: true });
     expect(await pending).toMatchObject({ kind: 'response' });
+    const node = resolveNodeBinary();
     expect(JSON.parse(readFileSync(agyHooksFile, 'utf8'))).toEqual({
-      orquestra: { Stop: [{ type: 'command', command: 'node C:/orq/bin/orq.mjs hook agy Stop', timeout: 10 }] },
+      orquestra: { Stop: [{ type: 'command', command: `"${node}" "C:/orq/bin/orq.mjs" hook agy Stop`, timeout: 10 }] },
     });
   });
 
@@ -510,7 +512,17 @@ describe('editar terminal e padrões na ponte', () => {
 
 describe('regente na ponte', () => {
   const shellAdapter = () => ({ ...createFakeAdapter(), kind: 'shell', acceptsPrompts: false });
-  const agentAdapter = () => ({ ...createFakeAdapter(), kind: 'claude' });
+  const agentAdapter = () => {
+    const base = createFakeAdapter();
+    return {
+      ...base,
+      kind: 'claude',
+      launch: (ctx: Parameters<typeof base.launch>[0]) => ({
+        ...base.launch(ctx),
+        agentSessionId: ctx.resumeSessionId ?? 'claude-sess-1',
+      }),
+    };
+  };
 
   async function withRegent() {
     const ctx = await setup({ adapters: { shell: shellAdapter(), claude: agentAdapter() } });
@@ -579,6 +591,43 @@ describe('regente na ponte', () => {
     await second.command('1', 'project.open', { dir: first.dir });
     await new Promise((resolve) => setTimeout(resolve, 200));
     for (const { pty } of second.ptyHost.spawned) expect(pty.written.join('')).not.toContain('[orq] Sua função');
+  });
+
+  it('restaurar terminal novo sem sessionId entrega o guia', async () => {
+    const freshAdapter = () => createFakeAdapter();
+    const first = await setup({ adapters: { shell: shellAdapter(), claude: freshAdapter() } });
+    const dir = mkdtempSync(join(tmpdir(), 'orq-fresh-'));
+    await first.command('1', 'project.open', { dir });
+    await first.command('2', 'terminal.create', { name: 'Fresh', agent: 'claude', regente: true });
+    await bridge!.close();
+    bridge = undefined;
+    const second = await setup({ adapters: { shell: shellAdapter(), claude: freshAdapter() } });
+    await second.command('1', 'project.open', { dir });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const freshPty = second.ptyHost.spawned.find((s) => s.spec.cwd === dir);
+    expect(freshPty?.pty.written.join('')).toContain('[orq]');
+  });
+
+  it('relaunch fresh quando a retomada falha entrega o guia', async () => {
+    const adapter: AgentAdapter = {
+      ...createFakeAdapter(),
+      kind: 'claude',
+      interpretHook: () => ({ kind: 'turn-end', text: null, transcriptPath: null, agentSessionId: 'conv-1' }),
+    };
+    const { command, sent, ptyHost } = await setup({ adapters: { shell: shellAdapter(), claude: adapter } });
+    const dir = mkdtempSync(join(tmpdir(), 'orq-relaunch-'));
+    await command('1', 'project.open', { dir });
+    await command('2', 'terminal.create', { name: 'RelaunchTerm', agent: 'claude', regente: true });
+    const env = ptyHost.spawned.at(-1)!.spec.env;
+    await call({ pipePath: env.ORQ_PIPE!, token: env.ORQ_TOKEN! }, 'hook', { agent: 'claude', event: 'Stop', payload: {} });
+    await command('3', 'terminal.restart', { name: 'RelaunchTerm' });
+    expect(ptyHost.spawned.at(-1)!.spec.args).toContain('--resume');
+    ptyHost.last().emitExit(1);
+    await waitFor(() => sent.some((message) => message.kind === 'event' && message.event.type === 'terminal.notice'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const fresh = ptyHost.spawned.at(-1)!;
+    expect(fresh.spec.args).not.toContain('--resume');
+    expect(fresh.pty.written.join('')).toContain('[orq]');
   });
 
   it('persona.write com texto vazio devolve USAGE e mantém workspace válido', async () => {

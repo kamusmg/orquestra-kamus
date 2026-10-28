@@ -13,7 +13,7 @@ import type { Logger } from './log.js';
 import { NoteStore, USER_AUTHOR, type Note } from './notes.js';
 import { startPipeServer } from './pipe-server.js';
 import { nodePtyHost, type PtyHost, type PtyProcess } from './pty-host.js';
-import { resolveExecutable } from './resolve-exe.js';
+import { resolveExecutable, resolveNodeBinary } from './resolve-exe.js';
 import { Session, type TurnFailure, type TurnOwner } from './session.js';
 import { Topology } from './topology.js';
 import type { BrowserHandler, BrowserNode } from '@orquestra/shared';
@@ -32,8 +32,9 @@ export type TerminalChanges = { newName?: string; agent?: AgentKind; cwd?: strin
 export type OrquestraOptions = {
   pipePath: string;
   dataDir: string;
-  /** Caminho sem espaços do orq.mjs instalado (installCli), usado nos hooks e no Path dos terminais. */
+  /** Caminho do orq.mjs instalado (installCli), usado nos hooks e no Path dos terminais. */
   cliScript: string;
+  nodeBinary?: string;
   adapters: Record<string, AgentAdapter>;
   log: Logger;
   ptyHost?: PtyHost;
@@ -54,6 +55,7 @@ export type OrquestraOptions = {
   regent?: RegentHandler;
   browser?: BrowserHandler;
   browserNodes?: () => BrowserNode[];
+  onRelaunchFresh?: (session: Session, config: Omit<TerminalDescriptor, 'name'>) => void;
 };
 
 export type OrquestraEvent =
@@ -207,10 +209,13 @@ export async function createOrquestra(opts: OrquestraOptions): Promise<Orquestra
     mkdirSync(sessionDir, { recursive: true });
     sessionDirs.push(sessionDir);
     if (sessionDirs.length > MAX_SESSION_DIRS) sessionDirs.splice(0, sessionDirs.length - MAX_SESSION_DIRS);
+    const nodeBinary = opts.nodeBinary ?? resolveNodeBinary();
+    const cleanNode = nodeBinary.replace(/^"(.*)"$/, '$1');
+    const cleanScript = opts.cliScript.replace(/^"(.*)"$/, '$1');
     const launch = adapter.launch({
       cwd: input.cwd,
       sessionDir,
-      hookCommand: (event) => `node "${opts.cliScript}" hook ${adapter.kind} ${event}`,
+      hookCommand: (event) => `"${cleanNode}" "${cleanScript}" hook ${adapter.kind} ${event}`,
       resumeSessionId,
       terminalName: input.name,
       terminalId: id,
@@ -338,10 +343,11 @@ export async function createOrquestra(opts: OrquestraOptions): Promise<Orquestra
     const neighbors = topology.neighbors(name);
     await removeTerminal(name, { announce: false });
     try {
-      createTerminal({ name, agent: config.agent, cwd: config.cwd, id: config.id, args: config.args, resume: config.resume, agentSessionId: null, regente: config.regente, persona: config.persona, monitor: config.monitor, sessionDirs: config.sessionDirs });
+      const session = createTerminal({ name, agent: config.agent, cwd: config.cwd, id: config.id, args: config.args, resume: config.resume, agentSessionId: null, regente: config.regente, persona: config.persona, monitor: config.monitor, sessionDirs: config.sessionDirs });
       for (const neighbor of neighbors) if (topology.kindOf(neighbor)) topology.connect(name, neighbor);
       emit({ type: 'notice', name, message: 'a sessão anterior não pôde ser retomada. O terminal começou uma sessão nova.' });
       emitState(name);
+      opts.onRelaunchFresh?.(session, config);
     } catch (error) {
       opts.log.error({ err: error, session: name }, 'falha ao relançar sem retomar');
       emit({ type: 'removed', name });

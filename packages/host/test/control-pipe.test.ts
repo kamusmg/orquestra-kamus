@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { silentLogger } from '../../core/src/log.js';
+import { agyStopHookCommand } from '../../core/src/agy-hooks.js';
 import { createFakeAdapter } from '../../core/test/helpers/fake-adapter.js';
 import { FakePtyHost } from '../../core/test/helpers/fake-pty-host.js';
 import { waitFor } from '../../core/test/helpers/wait.js';
@@ -384,7 +385,7 @@ describe('Control Pipe Server', () => {
     const agyHooksDir = mkdtempSync(join(tmpdir(), 'orq-agy-hooks-'));
     const agyHooksFile = join(agyHooksDir, 'hooks.json');
     writeFileSync(agyHooksFile, JSON.stringify({
-      orquestra: { Stop: [{ type: 'command', command: 'node C:/orq/bin/orq.mjs hook agy Stop', timeout: 10 }] },
+      orquestra: { Stop: [{ type: 'command', command: agyStopHookCommand('C:/orq/bin/orq.mjs'), timeout: 10 }] },
     }));
 
     const bridge = await startHostBridge({

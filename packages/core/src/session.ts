@@ -34,6 +34,10 @@ export type SessionOptions = {
   rows?: number;
   /** Silêncio na saída para considerar a TUI pronta: teclas enviadas antes disso são perdidas. */
   readyQuietMs?: number;
+  /** Tempo mínimo desde o spawn para aceitar silêncio como prontidão (padrão 4s). */
+  readyMinSpawnMs?: number;
+  /** Teto de espera até declarar o terminal pronto mesmo sem marcador ou silêncio (padrão 20s). */
+  readyTimeoutMs?: number;
   /**
    * Enter vazio pode não abrir turno. Só esse caso provisório (e shell, sem hooks)
    * usa silêncio como fallback; trabalho de agente pode ficar silencioso por minutos.
@@ -66,6 +70,8 @@ export class Session extends EventEmitter<SessionEvents> {
   private waitingOnScreen = false;
   private userInputAt = 0;
   private readyTimer: NodeJS.Timeout | undefined;
+  private readyCeilingTimer: NodeJS.Timeout | undefined;
+  private readonly spawnedAt: number;
   private userTurnTimer: NodeJS.Timeout | undefined;
   private turnWarningTimer: NodeJS.Timeout | undefined;
   private provisionalUserTurn = false;
@@ -113,8 +119,12 @@ export class Session extends EventEmitter<SessionEvents> {
     opts.pty.onData((data) => this.handleOutput(data));
     opts.pty.onExit((code) => this.onExit(code));
     opts.pty.onError((error) => this.opts.log.warn({ err: error }, 'falha ao escrever no terminal'));
+    this.spawnedAt = Date.now();
     if (opts.unloaded) this.currentState = 'exited';
-    else this.armReady();
+    else {
+      this.armReady();
+      this.armReadyCeiling();
+    }
     this.codexRolloutWatcher = this.adapter.kind === 'codex' && !opts.unloaded
       ? new CodexRolloutWatcher({
         codexHome: opts.codexHome,
@@ -361,6 +371,8 @@ export class Session extends EventEmitter<SessionEvents> {
   }
 
   async kill(): Promise<void> {
+    clearTimeout(this.readyTimer);
+    clearTimeout(this.readyCeilingTimer);
     await this.opts.pty.kill();
     await this.codexRolloutWatcher?.stop();
   }
@@ -427,6 +439,7 @@ export class Session extends EventEmitter<SessionEvents> {
     // O xterm processa a saída de modo assíncrono: ela pode pertencer a um turno já encerrado.
     if (turn !== this.turnSeq) return;
     this.waitingOnScreen = visible.has('waiting');
+    if (this.currentState === 'starting' && this.checkReadyPattern()) return;
     const failure: TurnFailure | null = appeared.includes('interrupted') ? 'interrupted' : appeared.includes('failed') ? 'agent-error' : null;
     if (failure && this.owner !== null) {
       const owner = this.owner;
@@ -481,6 +494,7 @@ export class Session extends EventEmitter<SessionEvents> {
   private onExit(code: number): void {
     this.agentBusy();
     clearTimeout(this.readyTimer);
+    clearTimeout(this.readyCeilingTimer);
     clearTimeout(this.userTurnTimer);
     clearTimeout(this.turnWarningTimer);
     void this.codexRolloutWatcher?.stop();
@@ -492,18 +506,54 @@ export class Session extends EventEmitter<SessionEvents> {
     if (owner) this.emit('turnFailed', { owner, reason: 'exited' });
   }
 
+  private armReadyCeiling(): void {
+    clearTimeout(this.readyCeilingTimer);
+    const timeoutMs = this.opts.readyTimeoutMs ?? 20_000;
+    this.readyCeilingTimer = setTimeout(() => {
+      if (this.currentState !== 'starting') return;
+      this.opts.log.warn({ session: this.name }, 'prontidão atingiu o teto de 20s; marcando como ocioso');
+      clearTimeout(this.readyTimer);
+      if (this.waitingOnScreen) return this.setState('waiting');
+      this.everIdle = true;
+      this.setState('idle', 'startup-ceiling');
+    }, timeoutMs);
+  }
+
+  private checkReadyPattern(): boolean {
+    if (this.currentState !== 'starting') return false;
+    const pattern = this.adapter.readyPattern;
+    if (!pattern) return false;
+    const matched = pattern.test(this.screen.text()) || pattern.test(this.screen.visible());
+    if (!matched) return false;
+    clearTimeout(this.readyTimer);
+    clearTimeout(this.readyCeilingTimer);
+    if (this.waitingOnScreen) {
+      this.setState('waiting');
+    } else {
+      this.everIdle = true;
+      this.setState('idle', 'startup-pattern');
+    }
+    return true;
+  }
+
   private armReady(): void {
     clearTimeout(this.readyTimer);
+    const quietMs = this.opts.readyQuietMs ?? 1500;
+    const minSpawnMs = this.opts.readyMinSpawnMs ?? (this.opts.readyQuietMs !== undefined ? 0 : 4000);
+    const minTarget = this.spawnedAt + minSpawnMs;
+    const delay = Math.max(quietMs, minTarget - Date.now());
     this.readyTimer = setTimeout(() => {
       if (this.currentState !== 'starting') return;
+      clearTimeout(this.readyCeilingTimer);
       if (this.waitingOnScreen) return this.setState('waiting');
       this.everIdle = true;
       this.setState('idle', 'startup-quiet');
-    }, this.opts.readyQuietMs ?? 1500);
+    }, delay);
   }
 
   private startTurn(owner: TurnOwner, askId: string | null): void {
     clearTimeout(this.readyTimer);
+    clearTimeout(this.readyCeilingTimer);
     clearTimeout(this.userTurnTimer);
     this.userTurnTimer = undefined;
     this.provisionalUserTurn = false;

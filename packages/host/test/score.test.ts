@@ -8,6 +8,7 @@ import { silentLogger } from '../../core/src/log.js';
 import { ScoreStore } from '../../core/src/scores.js';
 import { createFakeAdapter } from '../../core/test/helpers/fake-adapter.js';
 import { FakePtyHost } from '../../core/test/helpers/fake-pty-host.js';
+import { agyStopHookCommand } from '../../core/src/agy-hooks.js';
 import { startHostBridge, type HostBridge } from '../src/bridge.js';
 
 describe('ScoreStore (Partituras)', () => {
@@ -142,7 +143,7 @@ describe('HostBridge - RPC de Partituras', () => {
     const personasFile = join(dataDir, 'personas.json');
     const agyHooksFile = join(dataDir, 'hooks.json');
     writeFileSync(agyHooksFile, JSON.stringify({
-      orquestra: { Stop: [{ type: 'command', command: 'node C:/orq/bin/orq.mjs hook agy Stop', timeout: 10 }] },
+      orquestra: { Stop: [{ type: 'command', command: agyStopHookCommand('C:/orq/bin/orq.mjs'), timeout: 10 }] },
     }));
     const ptyHost = new FakePtyHost();
 

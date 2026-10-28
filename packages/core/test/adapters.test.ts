@@ -54,6 +54,16 @@ describe('claudeAdapter', () => {
     expect(claudeAdapter.screenRules.filter((rule) => rule.pattern.test(line)).map((rule) => rule.signal)).toEqual(['interrupted']);
   });
 
+  it('readyPattern reconhece caixa de entrada e prompt do Claude', () => {
+    const pattern = claudeAdapter.readyPattern!;
+    // Tela real: prompt vazio entre linhas horizontais e rodapé de atalhos.
+    expect(pattern.test('────────\n> \n────────\n? for shortcuts')).toBe(true);
+    expect(pattern.test('❯ ')).toBe(true);
+    expect(pattern.test('carregando...')).toBe(false);
+    // Banner de boas-vindas não é prontidão: o campo de digitação ainda não existe.
+    expect(pattern.test('╭────────────╮\n│ Welcome to Claude Code │\n╰────────────╯')).toBe(false);
+  });
+
   it('Notification vira espera do usuário e payload estranho é ignorado', () => {
     expect(claudeAdapter.interpretHook('Notification', { message: 'precisa de permissão' })).toEqual({
       kind: 'waiting',
@@ -115,6 +125,15 @@ describe('agyAdapter', () => {
     expect(match('Requesting permission for:\n   Get-ChildItem')).toEqual(['waiting']);
     expect(match('⎿  Interrupted · What should Antigravity CLI do instead?')).toEqual(['interrupted']);
   });
+
+  it('readyPattern reconhece caixa de entrada e prompt do agy', () => {
+    const pattern = agyAdapter.readyPattern!;
+    // Tela real do agy: o prompt mostra texto de ajuda depois do '>'.
+    expect(pattern.test('> Accept-edits mode: file edits auto-approved (shift+tab to cycle)')).toBe(true);
+    expect(pattern.test('> ')).toBe(true);
+    expect(pattern.test('iniciando agy...')).toBe(false);
+    expect(pattern.test('cd <pasta> > log.txt')).toBe(false);
+  });
 });
 
 describe('codexAdapter', () => {
@@ -129,6 +148,13 @@ describe('codexAdapter', () => {
     expect(signals('  Trust this folder? Codex can read, edit, and run files here, subject to your')).toEqual(['waiting']);
     expect(signals('  Worked for 1m 21s • 17:19')).toEqual([]);
     expect(signals('■ Conversation interrupted - use /feedback if something went wrong')).toEqual([]);
+  });
+
+  it('readyPattern reconhece prompt do codex', () => {
+    const pattern = codexAdapter.readyPattern!;
+    expect(pattern.test('› ')).toBe(true);
+    expect(pattern.test('> ')).toBe(true);
+    expect(pattern.test('executando...')).toBe(false);
   });
 });
 
@@ -181,10 +207,8 @@ describe('retomada no lançamento', () => {
     expect(agyAdapter.launch(ctx(null)).args).toEqual([]);
   });
 
-  it('agy com resume: true e sem sessionId passa --continue', () => {
-    expect(agyAdapter.launch({ ...ctx(null), resume: true }).args).toEqual(['--continue']);
+  it('agy não adiciona --continue sem sessionId mesmo com resume: true', () => {
+    expect(agyAdapter.launch({ ...ctx(null), resume: true }).args).toEqual([]);
     expect(agyAdapter.launch({ ...ctx(null), resume: true, args: ['--continue'] }).args).toEqual([]);
-    expect(agyAdapter.launch({ ...ctx(null), resume: true, args: ['-c'] }).args).toEqual([]);
-    expect(agyAdapter.launch({ ...ctx(null), resume: true, args: ['--conversation', 'abc'] }).args).toEqual([]);
   });
 });
