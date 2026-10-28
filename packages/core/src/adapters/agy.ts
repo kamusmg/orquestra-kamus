@@ -50,20 +50,9 @@ export const agyAdapter: AgentAdapter = {
     { pattern: /Interrupted · What should Antigravity CLI do instead\?/, signal: 'interrupted', scope: 'new-occurrence' },
   ],
   // Hooks vêm do arquivo global (agy não tem config por sessão): ver agy-hooks.ts.
-  // O histórico do agy é global: --conversation funciona em qualquer pasta.
+  // O histórico do agy é global: retoma só com id de conversa conhecido, nunca com --continue.
   launch: (ctx) => {
-    let args: string[] = [];
-    if (ctx.resumeSessionId) {
-      args = ['--conversation', ctx.resumeSessionId];
-    } else if (ctx.resume === true) {
-      const explicitArgs = ctx.args ?? [];
-      const hasContinue = explicitArgs.some(
-        (a) => a === '--continue' || a === '-c' || a === '--conversation' || a.startsWith('--conversation='),
-      );
-      if (!hasContinue) {
-        args = ['--continue'];
-      }
-    }
+    const args = ctx.resumeSessionId ? ['--conversation', ctx.resumeSessionId] : [];
     return { command: 'agy', args, env: {} };
   },
   interpretHook: (event, payload): HookSignal => {
