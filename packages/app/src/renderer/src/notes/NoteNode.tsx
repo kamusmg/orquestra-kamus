@@ -1,5 +1,5 @@
 import { NodeResizer, type NodeProps } from '@xyflow/react';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { activeWorkspaceId } from '../workspace-context';
 import { recoverGroupLayout } from '../groups/helpers';
 import { NodeConnectors } from '../canvas/NodeConnectors';
@@ -9,11 +9,26 @@ import { CommandError, createCommandApi, type CommandApi } from '../api';
 import type { NoteFlowNode } from '../canvas/flow-nodes';
 import { appStore, layoutOf, useApp } from '../store';
 
+// Constantes estáticas fora do render evitam alocações contínuas de array/objeto no AST
+const REMARK_PLUGINS = [remarkGfm];
+const MARKDOWN_COMPONENTS = {
+  a: ({ children }: { children?: ReactNode }) => <span className="note-link">{children}</span>,
+};
 
-export function NoteBody({ name, api }: { name: string; api: CommandApi }) {
+export const NoteBody = memo(function NoteBody({ name, api }: { name: string; api: CommandApi }) {
   const note = useApp((state) => state.notes[name]);
   // baseRevision: revisão em que a edição começou, para o núcleo recusar se outro alterou no meio.
   const [draft, setDraft] = useState<{ text: string; baseRevision: number } | null>(null);
+
+  const renderedMarkdown = useMemo(
+    () => (
+      <Markdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
+        {note?.content ?? ''}
+      </Markdown>
+    ),
+    [note?.content],
+  );
+
   if (!note) return null;
 
   const save = async (text: string, baseRevision: number | null) => {
@@ -73,15 +88,12 @@ export function NoteBody({ name, api }: { name: string; api: CommandApi }) {
 
   return (
     <div className="note-view nowheel" data-testid={`note-view-${name}`} onDoubleClick={() => setDraft({ text: note.content, baseRevision: note.revision })}>
-      {/* Link vira texto: um clique não pode trocar a página do app. */}
-      <Markdown remarkPlugins={[remarkGfm]} components={{ a: ({ children }) => <span className="note-link">{children}</span> }}>
-        {note.content}
-      </Markdown>
+      {renderedMarkdown}
     </div>
   );
-}
+});
 
-export function NoteNode({ data, selected }: NodeProps<NoteFlowNode>) {
+export const NoteNode = memo(function NoteNode({ data, selected }: NodeProps<NoteFlowNode>) {
   const defaultApi = useMemo(() => { const id = activeWorkspaceId(); return createCommandApi(window.orquestra.invoke, () => id); }, []);
   const note = useApp((state) => state.notes[data.name]);
   const [editingName, setEditingName] = useState(false);
@@ -156,4 +168,4 @@ export function NoteNode({ data, selected }: NodeProps<NoteFlowNode>) {
       </div>
     </>
   );
-}
+});

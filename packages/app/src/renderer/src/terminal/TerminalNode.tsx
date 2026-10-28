@@ -102,6 +102,24 @@ async function resolveDropFilePaths(files: File[]): Promise<string[]> {
   return paths;
 }
 
+export function attachWebglAddon(
+  term: Terminal,
+  createAddon: () => WebglAddon = () => new WebglAddon(),
+): WebglAddon | null {
+  try {
+    const webgl = createAddon();
+    webgl.onContextLoss(() => {
+      // Ao perder o contexto WebGL (limite de contextos do Chromium), descarta o addon e faz fallback para DOM
+      webgl.dispose();
+    });
+    term.loadAddon(webgl);
+    return webgl;
+  } catch {
+    // Sem WebGL o xterm usa o renderizador DOM (mais lento, mas funcional).
+    return null;
+  }
+}
+
 function TerminalBody({
   name,
   agent,
@@ -126,6 +144,7 @@ function TerminalBody({
     const workspaceId = activeWorkspaceId();
     const api = createCommandApi(window.orquestra.invoke, () => workspaceId);
     const term = new Terminal({
+      scrollback: 5000,
       fontFamily: '"Cascadia Mono", Consolas, monospace',
       fontSize: 13,
       allowProposedApi: true,
@@ -139,11 +158,7 @@ function TerminalBody({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current!);
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch {
-      // Sem WebGL o xterm usa o renderizador DOM (mais lento, mas funcional).
-    }
+    attachWebglAddon(term);
     const copySelection = () => {
       void window.orquestra.writeClipboard(term.getSelection());
       term.clearSelection();
@@ -192,14 +207,14 @@ function TerminalBody({
       return false;
     });
     // Clique direito, como no Windows Terminal: copia a seleção ou, sem seleção, cola.
+    const hostElement = host.current!;
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault();
       if (term.hasSelection()) copySelection();
       else pasteClipboard();
     };
-    host.current!.addEventListener('contextmenu', onContextMenu);
+    hostElement.addEventListener('contextmenu', onContextMenu);
     // Em captura, antes do xterm: rola o buffer direto e não perde a roda para a saída que chega junto.
-    const hostElement = host.current!;
     const onWheel = (event: WheelEvent) => {
       // Ctrl+roda é zoom do canvas em qualquer zoom: nunca rola o histórico nem chega ao agente.
       if (forwardWheelToCanvas(event, hostElement.closest('.term-node'))) return;
@@ -241,7 +256,7 @@ function TerminalBody({
       detach();
       term.textarea?.removeEventListener('focus', onFocus);
       term.textarea?.removeEventListener('blur', onBlur);
-      host.current?.removeEventListener('contextmenu', onContextMenu);
+      hostElement.removeEventListener('contextmenu', onContextMenu);
       hostElement.removeEventListener('wheel', onWheel, { capture: true });
       if (window.__orqTerms?.[name] === term) delete window.__orqTerms[name];
       onAttachTerm?.(null);
